@@ -1,0 +1,25 @@
+# Uploads made through the web app are session scratch, not source.
+app/uploads/*
+!app/uploads/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+# Keep the committed sample data (synthetic_*), but ignore real captures so a
+# phone photo dump does not accidentally land in the repo. Force-add your own
+# submission images deliberately:  git add -f calibration/data/images/IMG_*.jpg
+calibration/data/images/*
+!calibration/data/images/synthetic_*
+!calibration/data/images/README_SYNTHETIC.txt
+validation/data/images/*
+!validation/data/images/synthetic_*
+!validation/data/images/README_SYNTHETIC.txt
+measurement/data/*
+!measurement/data/synthetic_*
+
+# Scratch outputs written by tools/verify_pipeline.py
+validation/output/_verify*

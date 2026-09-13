@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Step 1 &mdash; Calibration{% endblock %}
+
+{% block content %}
+<h1>Step 1 &mdash; Camera calibration</h1>
+<p class="lead">
+  Upload 15&ndash;20 photos of a rigid checkerboard, tilted and positioned across the
+  frame. The corners are detected, refined to subpixel accuracy with
+  <code class="inline">cornerSubPix</code>, and fitted with
+  <code class="inline">cv2.calibrateCamera</code> &mdash; OpenCV's implementation of Zhang's
+  multi-plane method.
+</p>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+{% if rejected %}
+<div class="warn">
+  <strong>Rejected images:</strong>
+  <ul class="small">{% for name, why in rejected %}<li>{{ name }} &mdash; {{ why }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="panel">
+    <h2>Fit a calibration</h2>
+    <form method="post" enctype="multipart/form-data">
+      <label for="images">Checkerboard images (select all at once)</label>
+      <input type="file" id="images" name="images" accept="image/*" multiple required>
+
+      <label for="pattern">Inner corners (COLS&times;ROWS)</label>
+      <input type="text" id="pattern" name="pattern" value="{{ pattern_default }}">
+
+      <label for="square_size">Square size (mm) &mdash; measure the printed board</label>
+      <input type="number" id="square_size" name="square_size" step="0.01" min="0.01"
+             value="{{ square_default }}">
+
+      <button type="submit">Detect corners and fit</button>
+    </form>
+    <p class="small muted" style="margin-top:14px">
+      All images must share one resolution, and it must be the resolution used
+      in Steps 2 and 3 &mdash; K is in pixels, so it is only valid at the
+      resolution it was fitted at.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Currently loaded</h2>
+    {% if cam %}
+      <p class="small muted">from <code class="inline">{{ params_path }}</code></p>
+      <dl class="kv">
+        <dt>f<sub>x</sub>, f<sub>y</sub></dt><dd>{{ "%.3f"|format(cam.fx) }}, {{ "%.3f"|format(cam.fy) }} px</dd>
+        <dt>f<sub>y</sub> / f<sub>x</sub></dt><dd>{{ "%.5f"|format(cam.fy / cam.fx) }}</dd>
+        <dt>c<sub>x</sub>, c<sub>y</sub></dt><dd>{{ "%.3f"|format(cam.cx) }}, {{ "%.3f"|format(cam.cy) }} px</dd>
+        <dt>c<sub>x</sub>/w, c<sub>y</sub>/h</dt>
+        <dd>{{ "%.4f"|format(cam.cx / cam.width) }}, {{ "%.4f"|format(cam.cy / cam.height) }}</dd>
+        <dt>resolution</dt><dd>{{ cam.width }} &times; {{ cam.height }}</dd>
+        <dt>RMS</dt><dd>{{ "%.4f"|format(cam.rms) }} px</dd>
+        <dt>images</dt><dd>{{ cam.image_count or "&mdash;"|safe }}</dd>
+        <dt>square size</dt><dd>{{ cam.square_size_mm }} mm</dd>
+      </dl>
+      <h3>Distortion [k1 k2 p1 p2 k3]</h3>
+      <div class="math">{% for d in cam.dist.ravel().tolist() %}{{ "%+.6f"|format(d) }}  {% endfor %}</div>
+      <h3>Intrinsic matrix K</h3>
+      <div class="math">[ {{ "%9.3f"|format(cam.fx) }}   0.000  {{ "%9.3f"|format(cam.cx) }} ]
+[    0.000  {{ "%9.3f"|format(cam.fy) }}  {{ "%9.3f"|format(cam.cy) }} ]
+[    0.000     0.000      1.000 ]</div>
+      <p class="small muted">
+        Skew is assumed zero and pixels square, which the measured
+        f<sub>y</sub>/f<sub>x</sub> = {{ "%.5f"|format(cam.fy / cam.fx) }} supports.
+      </p>
+    {% else %}
+      <div class="warn">{{ cam_error }}</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('use_default_params') }}">
+      <button type="submit" class="secondary">Reload the CLI's camera_params.yaml</button>
+    </form>
+  </div>
+</div>
+
+{% if result %}
+<div class="panel">
+  <h2>Fit result</h2>
+  <div class="readout">
+    <div class="stat">
+      <div class="label">RMS reprojection error</div>
+      <div class="value">{{ "%.4f"|format(result.rms) }} <small>px</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">Images accepted</div>
+      <div class="value">{{ result.accepted }}<small> / {{ result.uploaded }}</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">Resolution</div>
+      <div class="value" style="font-size:17px">{{ result.image_size[0] }}&times;{{ result.image_size[1] }}</div>
+    </div>
+  </div>
+
+  <h3>Exit criteria</h3>
+  <table>
+    <tbody>
+    {% for label, ok in result.checks %}
+      <tr>
+        <td>{{ label }}</td>
+        <td style="width:90px">
+          <span class="pill {{ 'pass' if ok else 'fail' }}">{{ 'PASS' if ok else 'CHECK' }}</span>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <a class="btn" href="{{ url_for('download_params', token=result.token) }}">
+    Download camera_params.yaml
+  </a>
+  <span class="small muted" style="margin-left:10px">
+    This fit is now the active camera for Step 2.
+  </span>
+
+  {% if result.skipped %}
+    <div class="warn small">Ignored non-image files: {{ result.skipped|join(", ") }}</div>
+  {% endif %}
+  {% if result.rejected %}
+    <div class="warn small">
+      <strong>Rejected:</strong>
+      {% for name, why in result.rejected %}{{ name }} ({{ why }}){% if not loop.last %}; {% endif %}{% endfor %}
+    </div>
+  {% endif %}
+
+  <h3>Per-image reprojection error</h3>
+  <p class="small muted">
+    Sorted worst last. This is how the one bad photo dragging the fit down gets found.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>image</th><th class="num">RMS (px)</th></tr></thead>
+      <tbody>
+      {% for name, err in result.errors %}
+        <tr><td>{{ name }}</td><td class="num">{{ "%.4f"|format(err) }}</td></tr>
+      {% endfor %}
+        <tr><td><strong>mean</strong></td>
+            <td class="num"><strong>{{ "%.4f"|format(result.mean_error) }}</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if result.debug_images %}
+  <h3>Detected corners</h3>
+  <div class="thumbs">
+    {% for name in result.debug_images %}
+    <figure>
+      <img src="{{ url_for('calibration_debug_image', token=result.token, name=name) }}" alt="{{ name }}">
+      <figcaption>{{ name }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% elif existing_debug %}
+<div class="panel">
+  <h2>Corner overlays from the last CLI run</h2>
+  <p class="small muted">Written by <code class="inline">calibration/calibrate.py</code> to
+  <code class="inline">calibration/output/debug/</code>.</p>
+  <div class="thumbs">
+    {% for name in existing_debug %}
+    <figure>
+      <img src="{{ url_for('existing_debug_image', name=name) }}" alt="{{ name }}">
+      <figcaption>{{ name }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Why Zhang's method rather than a DLT fit</h2>
+  <p class="small">
+    A direct linear transform on a single calibration object recovers a projection
+    matrix, but it does not model radial distortion, cannot impose constraints such
+    as a known focal length or zero skew, and minimises an algebraic residual rather
+    than the geometrically meaningful reprojection error. Zhang's method observes one
+    planar target in many orientations, which both supplies the constraints needed to
+    separate the intrinsics from the per-view extrinsics and lets the distortion
+    coefficients be estimated &mdash; then refines everything by nonlinear
+    least squares on reprojection error, which is the number reported above.
+  </p>
+</div>
+{% endblock %}

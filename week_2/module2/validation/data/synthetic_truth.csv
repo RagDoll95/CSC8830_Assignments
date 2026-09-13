@@ -1,0 +1,21 @@
+id,image_file,object,dimension,Z_true_mm,ground_truth_mm,u1_true,v1_true,u2_true,v2_true
+1,synthetic_meas_01.jpg,hardback book,H,2150.0,240.00,949.587,666.410,949.577,845.217
+2,synthetic_meas_02.jpg,hardback book,W,2480.0,155.00,957.271,678.310,1057.321,678.315
+3,synthetic_meas_03.jpg,laptop lid,W,2320.0,358.00,883.722,670.517,1130.845,670.530
+4,synthetic_meas_04.jpg,laptop lid,D,2910.0,434.94,908.803,687.823,1105.790,823.792
+5,synthetic_meas_05.jpg,A4 sheet,H,2240.0,297.00,932.237,649.609,932.221,862.031
+6,synthetic_meas_06.jpg,A4 sheet,W,3050.0,210.00,952.185,677.826,1062.406,677.831
+7,synthetic_meas_07.jpg,monitor bezel,W,3380.0,597.00,865.831,676.162,1148.728,676.176
+8,synthetic_meas_08.jpg,monitor bezel,H,2760.0,336.00,833.982,658.238,833.948,853.421
+9,synthetic_meas_09.jpg,cereal box front,H,2080.0,300.00,932.232,640.279,932.215,871.367
+10,synthetic_meas_10.jpg,cereal box front,W,2640.0,195.00,948.169,664.800,1066.420,664.807
+11,synthetic_meas_11.jpg,whiteboard,W,4120.0,900.00,832.243,639.075,1182.291,639.101
+12,synthetic_meas_12.jpg,whiteboard,D,3540.0,1081.67,803.467,619.894,1211.099,891.768
+13,synthetic_meas_13.jpg,door panel,H,4480.0,1981.00,870.634,400.538,870.538,1111.457
+14,synthetic_meas_14.jpg,door panel,W,3960.0,762.00,852.541,353.534,1161.914,353.611
+15,synthetic_meas_15.jpg,poster,D,2870.0,727.49,890.043,589.931,1124.553,921.741
+16,synthetic_meas_16.jpg,poster,H,2210.0,594.00,854.901,540.235,854.836,971.527
+17,synthetic_meas_17.jpg,keyboard,W,2130.0,440.00,841.821,703.895,1172.726,703.906
+18,synthetic_meas_18.jpg,pizza box,W,2560.0,330.00,904.073,652.545,1110.501,652.558
+19,synthetic_meas_19.jpg,backpack panel,H,2410.0,460.00,907.582,602.864,907.551,908.816
+20,synthetic_meas_20.jpg,framed picture,D,3120.0,640.31,878.943,653.090,1135.645,858.541

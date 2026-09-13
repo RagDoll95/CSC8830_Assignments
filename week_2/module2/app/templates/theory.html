@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Part D &mdash; Two-Camera Relationship{% endblock %}
+
+{% block content %}
+<h1>Part D &mdash; The two-camera relationship</h1>
+<p class="lead">
+  Derivation of the relationship between the image coordinates of a point
+  P&nbsp;=&nbsp;(X,&nbsp;Y,&nbsp;Z) in camera 1 and in camera 2, where camera 1 is static
+  and camera 2 sits at some distance and at an oblique orientation from it, with P inside
+  the field of view of both. Typed, as the submission requires; the same text is in
+  <code class="inline">theory/two_camera_derivation.md</code> for the PDF.
+</p>
+
+<div class="panel">
+  <h2>1. Assumptions, and why each is defensible</h2>
+  <ol class="small">
+    <li><strong>Ideal pinhole projection.</strong> Both images are undistorted first using
+      the coefficients from Step 1. With RMS reprojection error below 0.5 px after
+      correction, the residual departure from a pinhole is below the corner-localization
+      noise, so modelling it further adds parameters without reducing error.</li>
+    <li><strong>Both cameras calibrated.</strong> K<sub>1</sub> and K<sub>2</sub> known
+      from Step 1. If one phone captures both views then K<sub>1</sub>&nbsp;=&nbsp;K<sub>2</sub>,
+      which halves the unknown intrinsics.</li>
+    <li><strong>Zero skew, square pixels.</strong> Step 1 gives
+      f<sub>y</sub>/f<sub>x</sub> within a fraction of a percent of 1, and CMOS pixel axes
+      are orthogonal by construction, so the skew term is set to zero rather than
+      estimated.</li>
+    <li><strong>Rigid relative pose.</strong> R and t are constant across the pair of
+      exposures &mdash; the rig does not flex between them.</li>
+    <li><strong>World frame anchored to camera 1.</strong> A free choice of gauge, and the
+      one that makes the algebra clean: camera 1's extrinsics become [I&nbsp;|&nbsp;0].</li>
+    <li><strong>P in front of both cameras</strong> &mdash; positive depth in both frames,
+      the chirality condition, implied by "within the FoV of both".</li>
+    <li><strong>Static scene.</strong> P does not move between exposures; required when
+      the two views are captured sequentially with one phone.</li>
+  </ol>
+</div>
+
+<div class="panel derivation">
+  <h2>2. Setting up the two projections</h2>
+  <p class="small">With <code class="inline">x &cong; K[R|t]X</code> and the world frame on camera 1:</p>
+  <div class="math">Camera 1:    x&#8321;  &cong;  K&#8321; [I | 0] X   =  K&#8321; P
+Camera 2:    x&#8322;  &cong;  K&#8322; [R | t] X   =  K&#8322; (R P + t)</div>
+  <p class="small">
+    P&nbsp;=&nbsp;(X,&nbsp;Y,&nbsp;Z)<sup>T</sup> is nonhomogeneous, in camera 1's frame;
+    R is camera 2's rotation relative to camera 1; and
+    <code class="inline">t = &minus;R C&#771;</code> with C&#771; the camera 2 centre
+    expressed in camera 1's frame. "Oblique orientation" means R&nbsp;&ne;&nbsp;I;
+    "at some distance" means t&nbsp;&ne;&nbsp;0. Both matter below.
+  </p>
+
+  <h2>3. Back out P from camera 1</h2>
+  <div class="math">P  =  Z &middot; K&#8321;&#8315;&#185; x&#8321;</div>
+  <p class="small">
+    Exactly the backprojection used in Step 2 &mdash; the same operation, reused. It also
+    makes the difficulty explicit: x<sub>1</sub> determines only the <em>ray</em> on which
+    P lies. The scalar Z is the missing information.
+  </p>
+
+  <h2>4. Substitute &mdash; the answer</h2>
+  <div class="math">x&#8322;  &cong;  K&#8322; R (Z K&#8321;&#8315;&#185; x&#8321;)  +  K&#8322; t
+    =  Z (K&#8322; R K&#8321;&#8315;&#185;) x&#8321;  +  K&#8322; t</div>
+  <p class="small">Dividing through by Z, legal because the relation is projective:</p>
+  <div class="math" style="background:#eaf1fa;border-color:#b9d2ee">x&#8322;  &cong;  H&#8734; x&#8321;  +  e&#8322; / Z
+
+where   H&#8734;  =  K&#8322; R K&#8321;&#8315;&#185;        the infinite homography
+        e&#8322;  =  K&#8322; t                the epipole in image 2</div>
+  <p class="small">
+    <strong>This is the required relationship.</strong> In words: the image of P in
+    camera 2 is the position of x<sub>1</sub> warped by rotation and by the two sets of
+    intrinsics, then displaced along the direction of the epipole e<sub>2</sub> by an
+    amount inversely proportional to depth.
+  </p>
+  <ul class="small">
+    <li>H<sub>&infin;</sub> is the limit as Z&nbsp;&rarr;&nbsp;&infin;. Points at infinity
+      map by H<sub>&infin;</sub> alone, which is why distant scenery barely shifts between
+      two views while nearby objects shift a lot.</li>
+    <li>Sweeping Z from 0 to &infin; traces the <strong>epipolar line</strong> of
+      x<sub>1</sub> in image 2. A single view therefore cannot recover depth &mdash; the
+      whole line is consistent with one observation. This is exactly why Step 2 needed a
+      tape measure.</li>
+  </ul>
+
+  <h2>5. The depth-free form: the epipolar constraint</h2>
+  <p class="small">
+    Since <code class="inline">P&#8322; = RP + t</code> makes P<sub>2</sub>, t and RP
+    coplanar, the triple product vanishes:
+  </p>
+  <div class="math">P&#8322; &middot; (t &times; R P)  =  0</div>
+  <p class="small">In normalized coordinates, rearranged into matrix form:</p>
+  <div class="math" style="background:#eaf1fa;border-color:#b9d2ee">x&#8322;&#7488; F x&#8321;  =  0
+
+where   F  =  K&#8322;&#8315;&#7488; [t]&#8339; R K&#8321;&#8315;&#185;     the fundamental matrix
+        E  =  [t]&#8339; R  =  K&#8322;&#7488; F K&#8321;         the essential matrix</div>
+  <table>
+    <thead><tr><th>quantity</th><th class="num">DoF</th><th>why</th></tr></thead>
+    <tbody>
+      <tr><td>F</td><td class="num">7</td>
+        <td class="small">3&times;3, defined up to scale (&minus;1), and det&nbsp;F&nbsp;=&nbsp;0 (&minus;1)</td></tr>
+      <tr><td>E</td><td class="num">5</td>
+        <td class="small">3 for R, 3 for t, minus 1 for the unrecoverable scale of t</td></tr>
+    </tbody>
+  </table>
+  <p class="small">
+    Because E is unchanged by scaling t, <strong>translation is recoverable only up to
+    scale</strong> from correspondences alone. Metric scale needs one real length: a
+    checkerboard square, or a tape-measured baseline &#8214;t&#8214;.
+  </p>
+
+  <h2>6. Expanded scalar form</h2>
+  <p class="small">With the rows of R written r<sub>1</sub><sup>T</sup>,
+    r<sub>2</sub><sup>T</sup>, r<sub>3</sub><sup>T</sup>:</p>
+  <div class="math">u&#8322;  =  f_x2 &middot; (r&#8321;&#7488;P + t_x) / (r&#8323;&#7488;P + t_z)  +  c_x2
+
+v&#8322;  =  f_y2 &middot; (r&#8322;&#7488;P + t_y) / (r&#8323;&#7488;P + t_z)  +  c_y2</div>
+  <p class="small">
+    The denominator r<sub>3</sub><sup>T</sup>P&nbsp;+&nbsp;t<sub>z</sub> is the depth of P
+    in camera 2's frame. This form makes concrete what the matrix form hides: the mapping
+    is <strong>nonlinear</strong> in P because of the perspective division, and the
+    nonlinearity sits entirely in that one shared denominator. Parametrizing R by ZYZ
+    Euler angles, <code class="inline">R(&psi;,&theta;,&phi;) = R_z(&phi;) R_y(&theta;) R_z(&psi;)</code>,
+    makes the complete set of static unknowns
+    (&psi;,&nbsp;&theta;,&nbsp;&phi;,&nbsp;t<sub>x</sub>,&nbsp;t<sub>y</sub>,&nbsp;t<sub>z</sub>)
+    &mdash; six numbers, five recoverable from correspondences, the sixth needing one
+    external length.
+  </p>
+</div>
+
+<div class="panel">
+  <h2>7. Parameter table</h2>
+  <table>
+    <thead><tr><th>symbol</th><th>type</th><th>meaning</th><th>how obtained</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">K&#8321;, K&#8322;</td><td>static</td><td>intrinsics of each camera</td>
+        <td class="small">Zhang calibration, Step 1. Equal if one phone takes both views.</td></tr>
+      <tr><td class="mono">dist&#8321;, dist&#8322;</td><td>static</td><td>distortion coefficients</td>
+        <td class="small">Step 1; applied to undistort both images before any of the above is used.</td></tr>
+      <tr><td class="mono">R</td><td>static</td><td>relative rotation, cam1 &rarr; cam2</td>
+        <td class="small"><code class="inline">cv2.stereoCalibrate</code> with the board visible in
+          both views; or decompose E via <code class="inline">cv2.recoverPose</code>.</td></tr>
+      <tr><td class="mono">t</td><td>static</td><td>relative translation, t = &minus;RC&#771;</td>
+        <td class="small">Same as R. From E alone it is direction-only; metric scale needs
+          one known length.</td></tr>
+      <tr><td class="mono">&#8214;t&#8214;</td><td>static</td><td>baseline</td>
+        <td class="small">Measured directly, or fixed by the known square size in
+          <code class="inline">stereoCalibrate</code>.</td></tr>
+      <tr><td class="mono">&psi;, &theta;, &phi;</td><td>static</td><td>ZYZ Euler angles of R</td>
+        <td class="small">From R via <code class="inline">cv2.Rodrigues</code> and an Euler conversion.</td></tr>
+      <tr><td class="mono">H&#8734;, e&#8322;, F, E</td><td>derived</td><td>composite quantities</td>
+        <td class="small">Computed from the above. F is also estimable directly from &ge;&nbsp;8
+          correspondences (<code class="inline">cv2.findFundamentalMat</code>), E from &ge;&nbsp;5.</td></tr>
+      <tr><td class="mono">x&#8321;, x&#8322;</td><td>variable</td><td>image coordinates of P</td>
+        <td class="small">Measured &mdash; feature detection and matching, or manual selection.</td></tr>
+      <tr><td class="mono">P = (X,Y,Z)</td><td>variable</td><td>the scene point</td>
+        <td class="small">Unknown; recovered by triangulation once x&#8321;, x&#8322;, R, t are known.</td></tr>
+      <tr><td class="mono">Z</td><td>variable</td><td>depth of P in cam 1</td>
+        <td class="small">Triangulated, or tape-measured as in Step 3.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>8. Degenerate and special cases</h2>
+  <h3>Pure rotation, t = 0</h3>
+  <div class="math">x&#8322;  &cong;  H&#8734; x&#8321;        (exactly, with no depth term)</div>
+  <p class="small">
+    Every point maps by one homography regardless of distance, so depth is unrecoverable
+    and F is undefined (E&nbsp;=&nbsp;[0]<sub>&times;</sub>R&nbsp;=&nbsp;0). This is the
+    sharpest argument that a nonzero baseline is essential: panning a phone on a tripod
+    yields no depth information no matter how many frames are taken.
+  </p>
+  <h3>P on a plane</h3>
+  <p class="small">
+    If all points satisfy n<sup>T</sup>P&nbsp;=&nbsp;d, then Z can be eliminated using the
+    plane equation and the mapping becomes a plane-induced homography
+    <code class="inline">H = K&#8322;(R + t n&#7488;/d)K&#8321;&#8315;&#185;</code>, again
+    independent of per-point depth. This is the same coplanar-point degeneracy that makes a
+    single checkerboard view insufficient for calibration &mdash; and why Zhang's method
+    needs the board in several orientations.
+  </p>
+  <h3>P on the baseline</h3>
+  <p class="small">
+    P projects to the epipole in both images and
+    x<sub>2</sub><sup>T</sup>Fx<sub>1</sub>&nbsp;=&nbsp;0 holds identically. The
+    correspondence carries no information and triangulation is singular.
+  </p>
+</div>
+
+<div class="panel">
+  <h2>9. Inverting the derivation: triangulation</h2>
+  <p class="small">
+    The payoff is that the two-camera formulation removes Step 2's dependence on a
+    manually measured Z. With x<sub>1</sub>, x<sub>2</sub>, R, t and both intrinsics known,
+    writing each projection as a cross product
+    <code class="inline">x &times; (P X) = 0</code> yields a homogeneous linear system
+    <code class="inline">A X = 0</code>, solved by the singular vector of A with the
+    smallest singular value &mdash; which is what
+    <code class="inline">cv2.triangulatePoints</code> does. Real-world dimensions then
+    follow as the Euclidean distance between two triangulated points, with no tape measure
+    anywhere in the pipeline.
+  </p>
+  <p class="small">
+    That directly resolves the main limitation of the experimental part: Step 2's accuracy
+    is bounded below by how well Z can be measured by hand, and
+    <a href="{{ url_for('validation') }}">Step 3's statistics</a> show the resulting bias
+    explicitly. The cost is that metric scale must still enter once, via the baseline or a
+    known length in the scene &mdash; depth from two views is otherwise determined only up
+    to a single global scale factor.
+  </p>
+</div>
+{% endblock %}

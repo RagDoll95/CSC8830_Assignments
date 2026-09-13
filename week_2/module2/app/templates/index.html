@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Module 2 &mdash; Overview{% endblock %}
+
+{% block content %}
+<h1>Module 2 &mdash; Camera Calibration and Real-World Measurement</h1>
+<p class="lead">
+  A calibrated smartphone camera, the perspective projection equations inverted at a
+  known object distance, a 20-measurement validation experiment, and the two-camera
+  derivation. Every part is reachable from the navigation bar.
+</p>
+
+{% if cam %}
+<div class="panel">
+  <h2>Loaded camera</h2>
+  <p class="small muted">from <code class="inline">{{ params_path }}</code></p>
+  <div class="grid2">
+    <dl class="kv">
+      <dt>f<sub>x</sub>, f<sub>y</sub></dt><dd>{{ "%.2f"|format(cam.fx) }}, {{ "%.2f"|format(cam.fy) }} px</dd>
+      <dt>c<sub>x</sub>, c<sub>y</sub></dt><dd>{{ "%.2f"|format(cam.cx) }}, {{ "%.2f"|format(cam.cy) }} px</dd>
+      <dt>resolution</dt><dd>{{ cam.width }} &times; {{ cam.height }}</dd>
+    </dl>
+    <dl class="kv">
+      <dt>RMS reprojection</dt><dd>{{ "%.4f"|format(cam.rms) }} px</dd>
+      <dt>images used</dt><dd>{{ cam.image_count or "&mdash;"|safe }}</dd>
+      <dt>c<sub>x</sub>/width</dt><dd>{{ "%.4f"|format(cam.cx / cam.width) }} <span class="muted small">(expect ~0.5)</span></dd>
+    </dl>
+  </div>
+</div>
+{% else %}
+<div class="warn">
+  <strong>No camera parameters loaded.</strong> {{ cam_error }}
+  Start on the <a href="{{ url_for('calibration') }}">Calibration</a> page.
+</div>
+{% endif %}
+
+<div class="cards">
+  <a class="card" href="{{ url_for('calibration') }}">
+    <span class="tag">Part A &middot; Step 1</span>
+    <strong>Camera calibration</strong>
+    <span class="desc">Upload checkerboard images, fit K and the distortion
+    coefficients by Zhang's multi-plane method, inspect the per-image
+    reprojection error, download <code>camera_params.yaml</code>.</span>
+  </a>
+  <a class="card" href="{{ url_for('measurement') }}">
+    <span class="tag">Part B &middot; Step 2</span>
+    <strong>Real-world measurement</strong>
+    <span class="desc">Upload an image, enter the object distance Z, click two
+    points, and read the width, height and diagonal in millimetres with an
+    error budget.</span>
+  </a>
+  <a class="card" href="{{ url_for('validation') }}">
+    <span class="tag">Part C &middot; Step 3</span>
+    <strong>Validation experiment</strong>
+    <span class="desc">{{ csv_rows }} logged measurements with ground truth, the
+    full error statistics &mdash; bias, spread, MAE, RMSE, MAPE &mdash; and the
+    diagnostic plots.</span>
+  </a>
+  <a class="card" href="{{ url_for('theory') }}">
+    <span class="tag">Part D</span>
+    <strong>Two-camera relationship</strong>
+    <span class="desc">Derivation of the mapping between the image coordinates
+    of a point in two cameras at oblique relative orientation, with the
+    assumptions and the parameter table.</span>
+  </a>
+</div>
+
+<div class="panel">
+  <h2>The method in one line</h2>
+  <div class="math">u = f_x &middot; X/Z + c_x        v = f_y &middot; Y/Z + c_y        (forward projection)
+
+X = (u &minus; c_x) &middot; Z / f_x    Y = (v &minus; c_y) &middot; Z / f_y    (inverted at known Z)</div>
+  <p class="small muted">
+    Backprojecting a pixel to a 3D point at known depth is the only primitive
+    needed: a dimension is the Euclidean distance between two backprojections,
+    so width, height and diagonal all come from one function.
+    For an axis-aligned span it collapses to <code class="inline">W = &Delta;u &middot; Z / f_x</code>.
+  </p>
+</div>
+
+<div class="panel">
+  <h2>Running it from the command line</h2>
+  <pre>cd module2
+pip install -r requirements.txt
+
+python calibration/capture_check.py          # pre-flight the photos
+python calibration/calibrate.py              # Step 1: fit K and dist
+python measurement/selftest_checkerboard.py --image BOARD.jpg --Z 1000
+python measurement/measure_cli.py --image PHOTO.jpg --Z 2400
+python validation/analyze.py                 # Step 3: error statistics
+python tools/verify_pipeline.py              # score the whole pipeline
+
+python app/app.py                            # this web app</pre>
+</div>
+{% endblock %}

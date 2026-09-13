@@ -1,0 +1,8 @@
+# Module 2 -- Camera calibration and real-world measurement
+#
+# Install:  pip install -r requirements.txt
+# Python 3.9+ (developed and verified on 3.9 with the versions below).
+opencv-python>=4.8
+numpy>=1.24
+flask>=3.0
+matplotlib>=3.7

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Step 3 &mdash; Validation{% endblock %}
+
+{% block content %}
+<h1>Step 3 &mdash; Validation experiment</h1>
+<p class="lead">
+  Twenty measurements of varied objects and varied dimensions, each imaged beyond 2 m
+  at a measured distance, against ground truth taken with a ruler before imaging.
+  The statistics below are computed by <code class="inline">validation/analyze.py</code>,
+  so every number on this page is reproducible from the CSV.
+</p>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<div class="panel">
+  <h2>Data source</h2>
+  <p class="small muted">Loaded from <code class="inline">{{ csv_path }}</code>.</p>
+  <form method="post" enctype="multipart/form-data">
+    <label for="csv">Load a different measurements CSV</label>
+    <input type="file" id="csv" name="csv" accept=".csv,text/csv">
+    <button type="submit">Analyse</button>
+  </form>
+  <p class="small muted" style="margin-top:12px">
+    Schema: <code class="inline">id, image_file, object, dimension, Z_mm,
+    ground_truth_mm, measured_mm, u1, v1, u2, v2</code>.
+    Storing the pixel coordinates means any row can be recomputed if the geometry
+    changes &mdash; without reshooting.
+  </p>
+</div>
+
+{% if stats %}
+<div class="panel">
+  <h2>Error statistics over {{ stats.n }} measurements</h2>
+
+  <div class="readout">
+    <div class="stat">
+      <div class="label">Mean signed error &mdash; bias</div>
+      <div class="value">{{ "%+.3f"|format(stats.mean_signed_error_mm) }} <small>mm</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">Std deviation &mdash; spread</div>
+      <div class="value">{{ "%.3f"|format(stats.std_error_mm) }} <small>mm</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">MAPE</div>
+      <div class="value">{{ "%.3f"|format(stats.mape_pct) }} <small>%</small></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <table>
+      <tbody>
+        <tr><td>measurements, n</td><td class="num">{{ stats.n }}</td></tr>
+        <tr><td>mean signed error</td><td class="num">{{ "%+.3f"|format(stats.mean_signed_error_mm) }} mm</td></tr>
+        <tr><td>std deviation of error</td><td class="num">{{ "%.3f"|format(stats.std_error_mm) }} mm</td></tr>
+        <tr><td>MAE</td><td class="num">{{ "%.3f"|format(stats.mae_mm) }} mm</td></tr>
+        <tr><td>RMSE</td><td class="num">{{ "%.3f"|format(stats.rmse_mm) }} mm</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <tbody>
+        <tr><td>mean signed percent error</td><td class="num">{{ "%+.3f"|format(stats.mean_signed_pct) }} %</td></tr>
+        <tr><td>MAPE</td><td class="num">{{ "%.3f"|format(stats.mape_pct) }} %</td></tr>
+        <tr><td>std of percent error</td><td class="num">{{ "%.3f"|format(stats.std_pct) }} %</td></tr>
+        <tr><td>most negative error</td><td class="num">{{ "%+.3f"|format(stats.min_error_mm) }} mm</td></tr>
+        <tr><td>most positive error</td><td class="num">{{ "%+.3f"|format(stats.max_error_mm) }} mm</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small muted">
+    Ground-truth sizes span {{ "%.0f"|format(stats.gt_min_mm) }}&ndash;{{ "%.0f"|format(stats.gt_max_mm) }} mm;
+    distances span {{ "%.0f"|format(stats.Z_min_mm) }}&ndash;{{ "%.0f"|format(stats.Z_max_mm) }} mm.
+    Largest absolute error: {{ worst.object }} ({{ worst.dimension }}), id {{ worst.id }}.
+  </p>
+
+  {% if stats.ci95_mm %}
+    {% if stats.bias_significant %}
+    <div class="warn">
+      <strong>95% CI on the mean signed error is
+      [{{ "%+.3f"|format(stats.ci95_mm[0]) }}, {{ "%+.3f"|format(stats.ci95_mm[1]) }}] mm &mdash; it excludes zero.</strong>
+      The bias is real, not sampling noise, and it should be attributed rather than
+      called noise. The leading candidate is the Z reference origin: a tape measure
+      starts at the phone's back glass, while Z is defined from the optical centre
+      inside the lens stack. A residual focal-length error from Step 1 is the other
+      candidate.
+    </div>
+    {% else %}
+    <div class="ok">
+      <strong>95% CI on the mean signed error is
+      [{{ "%+.3f"|format(stats.ci95_mm[0]) }}, {{ "%+.3f"|format(stats.ci95_mm[1]) }}] mm &mdash; it contains zero.</strong>
+      No statistically significant bias at this sample size: the random term
+      (click precision) dominates the systematic one. Turning the click noise down
+      and re-running is what separates the two.
+    </div>
+    {% endif %}
+  {% endif %}
+
+  {% if stats.corr_err_vs_gt is defined %}
+  <h3>Trend diagnostics</h3>
+  <table>
+    <tbody>
+      <tr>
+        <td>corr(ground-truth size, signed error)</td>
+        <td class="num">{{ "%+.3f"|format(stats.corr_err_vs_gt) }}</td>
+        <td class="small muted">A strong value means error grows with size &mdash; a scale
+        error in f<sub>x</sub> or Z, not click precision.</td>
+      </tr>
+      <tr>
+        <td>corr(Z, percent error)</td>
+        <td class="num">{{ "%+.3f"|format(stats.corr_pct_vs_Z) }}</td>
+        <td class="small muted">A trend implicates Z itself: a fixed origin offset
+        &delta;Z gives a percent error &delta;Z/Z that shrinks with distance.</td>
+      </tr>
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h3>Per-dimension breakdown</h3>
+  <table>
+    <thead><tr><th>dimension</th><th class="num">n</th><th class="num">mean error</th>
+      <th class="num">std error</th><th class="num">MAPE</th></tr></thead>
+    <tbody>
+    {% for d in by_dim %}
+      <tr>
+        <td>{{ d.dim }}</td>
+        <td class="num">{{ d.n }}</td>
+        <td class="num">{{ "%+.3f"|format(d.mean) }} mm</td>
+        <td class="num">{{ "%.3f"|format(d.std) }} mm</td>
+        <td class="num">{{ "%.3f"|format(d.mape) }} %</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>All {{ stats.n }} measurements</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>id</th><th>object</th><th>dim</th><th class="num">Z (mm)</th>
+          <th class="num">truth (mm)</th><th class="num">measured (mm)</th>
+          <th class="num">error (mm)</th><th class="num">error (%)</th></tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.object }}</td>
+          <td>{{ r.dimension }}</td>
+          <td class="num">{{ "%.1f"|format(r.Z) }}</td>
+          <td class="num">{{ "%.2f"|format(r.gt) }}</td>
+          <td class="num">{{ "%.2f"|format(r.meas) }}</td>
+          <td class="num {{ 'pos' if r.err > 0 else 'neg' }}">{{ "%+.2f"|format(r.err) }}</td>
+          <td class="num {{ 'pos' if r.pct > 0 else 'neg' }}">{{ "%+.2f"|format(r.pct) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if plots %}
+<div class="panel">
+  <h2>Diagnostic plots</h2>
+  <p class="small muted">
+    Written by <code class="inline">validation/analyze.py</code>. A trend in either plot
+    points at a specific cause rather than noise.
+  </p>
+  {% for p in plots %}
+    <img src="{{ url_for('validation_plot', name=p) }}" alt="{{ p }}"
+         style="max-width:100%;border:1px solid var(--line);border-radius:6px;margin-bottom:14px">
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Limitations</h2>
+  <p class="small">
+    The whole method rests on one assumption: the measured face is fronto-parallel and
+    at a single depth Z. Any tilt of the object plane, or any thickness between the
+    front edge and the face being measured, violates it &mdash; the projected span then
+    corresponds to a range of depths rather than one, and no single Z makes the
+    computation exact. A single view cannot recover depth, which is why Z has to be
+    measured with a tape at all; the
+    <a href="{{ url_for('theory') }}">two-camera derivation</a> shows how a second view
+    removes that dependence via triangulation.
+  </p>
+</div>
+
+<details class="panel">
+  <summary><strong>Full text report</strong> <span class="small muted">(as written to validation/output/statistics.txt)</span></summary>
+  <pre class="plain" style="margin-top:12px">{{ report_text }}</pre>
+</details>
+{% endif %}
+{% endblock %}

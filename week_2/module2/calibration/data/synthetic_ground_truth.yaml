@@ -1,0 +1,22 @@
+%YAML 1.2
+---
+camera_matrix: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 1600.5, 0., 1007.3, 0., 1601.2, 755.79999999999995, 0., 0.,
+       1. ]
+distortion_coefficients: !!opencv-matrix
+   rows: 1
+   cols: 5
+   dt: d
+   data: [ 0.080000000000000002, -0.16, 0.00080000000000000004,
+       -0.00050000000000000001, 0.050000000000000003 ]
+image_width: 2016
+image_height: 1512
+square_size_mm: 25.
+pattern_cols: 9
+pattern_rows: 6
+rms_reprojection_error_px: 0.
+image_count: 18
+notes: SYNTHETIC ground truth -- not a calibration result

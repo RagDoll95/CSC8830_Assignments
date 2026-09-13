@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}Step 2 &mdash; Measurement{% endblock %}
+
+{% block content %}
+<h1>Step 2 &mdash; Real-world 2D measurement</h1>
+<p class="lead">
+  Upload an image, enter the object distance Z, then click two points. The clicks are
+  converted from canvas coordinates to full-resolution image coordinates server-side,
+  undistorted with <code class="inline">cv2.undistortPoints</code>, and backprojected to
+  3D at depth Z. The dimension is the distance between the two backprojected points.
+</p>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if cam_error %}<div class="err">{{ cam_error }}</div>{% endif %}
+{% if resolution_error %}<div class="err"><strong>Refused.</strong> {{ resolution_error }}</div>{% endif %}
+{% if resolution_warning %}<div class="warn"><strong>Warning.</strong> {{ resolution_warning }}</div>{% endif %}
+
+<div class="grid2">
+  <div class="panel">
+    <h2>Load an image</h2>
+    <form method="post" enctype="multipart/form-data">
+      <label for="image">Image file</label>
+      <input type="file" id="image" name="image" accept="image/*">
+
+      {% if samples %}
+      <label for="sample">&hellip; or pick a bundled sample</label>
+      <select id="sample" name="sample">
+        <option value="">(use the uploaded file)</option>
+        {% for s in samples %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+      {% endif %}
+
+      <label for="Z">Z &mdash; distance from the optical centre to the object plane (mm)</label>
+      <input type="number" id="Z" name="Z" step="1" min="1" value="{{ z_default or 2400 }}" required>
+
+      <label class="inline-label">
+        <input type="checkbox" name="allow_scaling" value="1" {{ 'checked' if allow_scaling }}>
+        Rescale K if the resolution differs (approximate &mdash; assumes a pure resize)
+      </label>
+
+      <button type="submit">Load</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Active camera</h2>
+    {% if cam %}
+    <p class="small muted">from <code class="inline">{{ params_path }}</code></p>
+    <dl class="kv">
+      <dt>f<sub>x</sub>, f<sub>y</sub></dt><dd>{{ "%.2f"|format(cam.fx) }}, {{ "%.2f"|format(cam.fy) }} px</dd>
+      <dt>c<sub>x</sub>, c<sub>y</sub></dt><dd>{{ "%.2f"|format(cam.cx) }}, {{ "%.2f"|format(cam.cy) }} px</dd>
+      <dt>calibrated at</dt><dd>{{ cam.width }} &times; {{ cam.height }}</dd>
+      <dt>RMS</dt><dd>{{ "%.4f"|format(cam.rms) }} px</dd>
+    </dl>
+    {% else %}
+    <div class="warn">Calibrate first on the <a href="{{ url_for('calibration') }}">Step 1</a> page.</div>
+    {% endif %}
+    <div class="note small">
+      <strong>Getting Z right matters more than anything else here.</strong>
+      Measure to the camera's optical centre, not the phone's back glass &mdash; the
+      difference is 5&ndash;10 mm, a systematic bias on every measurement. Keep the
+      object centred in frame, or the straight-line distance is Z/cos&thinsp;&theta;
+      rather than Z. Measure to the face being measured.
+    </div>
+  </div>
+</div>
+
+{% if image_url %}
+<div class="panel">
+  <h2>Click two points</h2>
+  <p class="small muted">
+    {{ image_name }} &mdash; natural size {{ nat_w }}&times;{{ nat_h }} px.
+    Click once for each endpoint; a third click starts over.
+    <button type="button" id="reset" class="secondary" style="margin:0 0 0 8px;padding:4px 12px;font-size:13px">Reset</button>
+  </p>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div id="status" class="small muted" style="margin-top:10px">Waiting for the first click&hellip;</div>
+
+  <div id="results" style="display:none">
+    <div class="readout">
+      <div class="stat">
+        <div class="label">Width &mdash; |&Delta;X|</div>
+        <div class="value" id="out-w">&mdash;</div>
+      </div>
+      <div class="stat">
+        <div class="label">Height &mdash; |&Delta;Y|</div>
+        <div class="value" id="out-h">&mdash;</div>
+      </div>
+      <div class="stat">
+        <div class="label">Length &mdash; diagonal</div>
+        <div class="value" id="out-l">&mdash;</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <h3>Computation</h3>
+        <table>
+          <tbody>
+            <tr><td>p1 (full-res px)</td><td class="num" id="out-p1">&mdash;</td></tr>
+            <tr><td>p2 (full-res px)</td><td class="num" id="out-p2">&mdash;</td></tr>
+            <tr><td>pixel span</td><td class="num" id="out-span">&mdash;</td></tr>
+            <tr><td>&Delta;u, &Delta;v</td><td class="num" id="out-duv">&mdash;</td></tr>
+            <tr><td>Z</td><td class="num" id="out-z">&mdash;</td></tr>
+            <tr><td>scale at this Z</td><td class="num" id="out-scale">&mdash;</td></tr>
+            <tr><td>P1 (X,Y,Z) mm</td><td class="num" id="out-P1">&mdash;</td></tr>
+            <tr><td>P2 (X,Y,Z) mm</td><td class="num" id="out-P2">&mdash;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3>Error budget &mdash; 1&sigma;</h3>
+        <table>
+          <tbody>
+            <tr><td>click precision &delta;(&Delta;u)/&Delta;u</td><td class="num" id="unc-click">&mdash;</td></tr>
+            <tr><td>distance &delta;Z/Z</td><td class="num" id="unc-z">&mdash;</td></tr>
+            <tr><td>focal length &delta;f<sub>x</sub>/f<sub>x</sub></td><td class="num" id="unc-f">&mdash;</td></tr>
+            <tr><td><strong>combined</strong></td><td class="num" id="unc-total"><strong>&mdash;</strong></td></tr>
+            <tr><td>dominant term</td><td class="num" id="unc-dom">&mdash;</td></tr>
+          </tbody>
+        </table>
+        <p class="small muted">
+          Since W = &Delta;u&thinsp;&middot;&thinsp;Z / f<sub>x</sub>, the relative errors add:
+          &delta;W/W &asymp; &delta;(&Delta;u)/&Delta;u + &delta;Z/Z + &delta;f<sub>x</sub>/f<sub>x</sub>.
+          Larger objects measure better because a bigger &Delta;u shrinks the click term.
+        </p>
+      </div>
+    </div>
+
+    <h3>Annotated output</h3>
+    <p class="small muted">Saved automatically &mdash; this is the figure for the report.</p>
+    <img id="annotated" src="" alt="annotated result"
+         style="max-width:100%;border:1px solid var(--line);border-radius:6px">
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if image_url %}
+<script>
+(function () {
+  // Natural (full-resolution) size. K was calibrated at full resolution, so
+  // every click must be converted back to these coordinates before it reaches
+  // the geometry -- the conversion itself happens server-side.
+  const NAT_W = {{ nat_w }}, NAT_H = {{ nat_h }};
+  const TOKEN = {{ token|tojson }};
+  const IMAGE_NAME = {{ image_name|tojson }};
+  const ALLOW_SCALING = {{ 'true' if allow_scaling else 'false' }};
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status');
+  const resultsEl = document.getElementById('results');
+  const img = new Image();
+  let pts = [];
+  let busy = false;
+
+  img.onload = function () {
+    // Fit the canvas to the column while keeping the aspect ratio.
+    const maxW = Math.min(1040, canvas.parentElement.parentElement.clientWidth - 4);
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    redraw();
+  };
+  img.src = {{ image_url|tojson }};
+
+  function redraw() {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 2;
+    if (pts.length === 2) {
+      ctx.strokeStyle = '#ffcc33';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.stroke();
+    }
+    pts.forEach(function (p, i) {
+      ctx.fillStyle = '#e03030';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText('p' + (i + 1), p.x + 10, p.y - 9);
+    });
+  }
+
+  canvas.addEventListener('click', function (ev) {
+    if (busy) return;
+    const rect = canvas.getBoundingClientRect();
+    // CSS may scale the canvas element itself; map to canvas pixel space first.
+    const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (ev.clientY - rect.top) * (canvas.height / rect.height);
+    if (pts.length >= 2) { pts = []; resultsEl.style.display = 'none'; }
+    pts.push({ x: x, y: y });
+    redraw();
+    if (pts.length === 1) {
+      statusEl.textContent = 'First point set. Click the second point.';
+      statusEl.className = 'small muted';
+    } else {
+      submit();
+    }
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    pts = [];
+    resultsEl.style.display = 'none';
+    statusEl.textContent = 'Waiting for the first click…';
+    statusEl.className = 'small muted';
+    redraw();
+  });
+
+  function fmt(v, digits) { return Number(v).toFixed(digits === undefined ? 2 : digits); }
+
+  function submit() {
+    const Z = parseFloat(document.getElementById('Z').value);
+    if (!(Z > 0)) {
+      statusEl.textContent = 'Enter a positive Z first.';
+      statusEl.className = 'small';
+      statusEl.style.color = 'var(--bad)';
+      return;
+    }
+    busy = true;
+    statusEl.textContent = 'Measuring…';
+    statusEl.className = 'small muted';
+
+    fetch({{ url_for('api_measure')|tojson }}, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: TOKEN, image_name: IMAGE_NAME, Z: Z,
+        // Display size AND natural size both go up; the server does the scaling.
+        disp_w: canvas.width, disp_h: canvas.height,
+        nat_w: NAT_W, nat_h: NAT_H,
+        x1: pts[0].x, y1: pts[0].y, x2: pts[1].x, y2: pts[1].y,
+        allow_scaling: ALLOW_SCALING
+      })
+    })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+    .then(function (res) {
+      busy = false;
+      if (!res.ok || res.body.error) {
+        statusEl.textContent = 'Error: ' + (res.body.error || 'request failed');
+        statusEl.className = 'small';
+        statusEl.style.color = 'var(--bad)';
+        return;
+      }
+      const r = res.body.result, u = res.body.uncertainty;
+      document.getElementById('out-w').innerHTML = fmt(r.width_mm) + ' <small>mm</small>';
+      document.getElementById('out-h').innerHTML = fmt(r.height_mm) + ' <small>mm</small>';
+      document.getElementById('out-l').innerHTML = fmt(r.length_mm) + ' <small>mm</small>';
+      document.getElementById('out-p1').textContent = fmt(r.p1_px[0], 1) + ', ' + fmt(r.p1_px[1], 1);
+      document.getElementById('out-p2').textContent = fmt(r.p2_px[0], 1) + ', ' + fmt(r.p2_px[1], 1);
+      document.getElementById('out-span').textContent = fmt(r.span_px) + ' px';
+      document.getElementById('out-duv').textContent = fmt(r.du_px) + ', ' + fmt(r.dv_px) + ' px';
+      document.getElementById('out-z').textContent = fmt(r.Z_mm, 1) + ' mm';
+      document.getElementById('out-scale').textContent = fmt(r.mm_per_px, 4) + ' mm/px';
+      document.getElementById('out-P1').textContent =
+        r.p3d_1_mm.map(function (v) { return fmt(v, 1); }).join(', ');
+      document.getElementById('out-P2').textContent =
+        r.p3d_2_mm.map(function (v) { return fmt(v, 1); }).join(', ');
+
+      if (u) {
+        document.getElementById('unc-click').textContent = fmt(u.rel_click * 100) + ' %';
+        document.getElementById('unc-z').textContent = fmt(u.rel_Z * 100) + ' %';
+        document.getElementById('unc-f').textContent = fmt(u.rel_f * 100) + ' %';
+        document.getElementById('unc-total').innerHTML =
+          '<strong>' + fmt(u.rel_total * 100) + ' % (±' + fmt(u.abs_total_mm) + ' mm)</strong>';
+        document.getElementById('unc-dom').textContent = u.dominant;
+      }
+
+      document.getElementById('annotated').src = res.body.annotated_url + '?t=' + Date.now();
+      resultsEl.style.display = 'block';
+      statusEl.style.color = '';
+      statusEl.className = 'small muted';
+      statusEl.textContent = 'Measured. Click again to start a new measurement.'
+        + (res.body.warning ? '  WARNING: ' + res.body.warning : '');
+    })
+    .catch(function (e) {
+      busy = false;
+      statusEl.textContent = 'Request failed: ' + e;
+      statusEl.className = 'small';
+      statusEl.style.color = 'var(--bad)';
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

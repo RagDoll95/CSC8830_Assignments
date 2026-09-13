@@ -1,0 +1,83 @@
+================================================================================================
+STEP 3 -- VALIDATION OVER 20 MEASUREMENTS
+================================================================================================
+
+  id  object             dim     Z (mm)  truth (mm)   meas (mm)  err (mm)  err (%)
+  --------------------------------------------------------------------------------------------
+  1   hardback book      H       2139.4      240.00      238.83     -1.17    -0.49
+  2   hardback book      W       2471.1      155.00      154.46     -0.54    -0.35
+  3   laptop lid         W       2313.9      358.00      357.10     -0.90    -0.25
+  4   laptop lid         D       2905.6      434.94      434.33     -0.61    -0.14
+  5   A4 sheet           H       2232.8      297.00      296.07     -0.93    -0.31
+  6   A4 sheet           W       3043.0      210.00      209.54     -0.46    -0.22
+  7   monitor bezel      W       3371.3      597.00      595.54     -1.46    -0.24
+  8   monitor bezel      H       2756.2      336.00      335.56     -0.44    -0.13
+  9   cereal box front   H       2070.9      300.00      298.71     -1.29    -0.43
+  10  cereal box front   W       2629.3      195.00      194.24     -0.76    -0.39
+  11  whiteboard         W       4112.5      900.00      898.46     -1.54    -0.17
+  12  whiteboard         D       3528.8     1081.67     1078.35     -3.32    -0.31
+  13  door panel         H       4468.1     1981.00     1975.86     -5.14    -0.26
+  14  door panel         W       3953.6      762.00      760.85     -1.15    -0.15
+  15  poster             D       2861.6      727.49      725.43     -2.06    -0.28
+  16  poster             H       2199.0      594.00      591.08     -2.92    -0.49
+  17  keyboard           W       2125.9      440.00      439.21     -0.79    -0.18
+  18  pizza box          W       2552.6      330.00      329.08     -0.92    -0.28
+  19  backpack panel     H       2400.9      460.00      458.29     -1.71    -0.37
+  20  framed picture     D       3110.1      640.31      638.35     -1.96    -0.31
+
+------------------------------------------------------------------------------------------------
+ERROR STATISTICS
+------------------------------------------------------------------------------------------------
+  measurements                n     : 20
+  ground-truth size range           : 155.0 .. 1981.0 mm
+  distance range               Z    : 2071 .. 4468 mm
+
+  mean signed error                 :   -1.504 mm   <- systematic bias
+  std deviation of error            :    1.157 mm   <- random spread
+  mean absolute error         MAE   :    1.504 mm
+  root-mean-square error      RMSE  :    1.879 mm
+
+  mean signed percent error         :   -0.288 %
+  mean absolute percent error MAPE  :    0.288 %
+  std deviation of percent error    :    0.108 %
+
+  most negative error               :   -5.140 mm  (id 13, door panel H)
+  most positive error               :   -0.440 mm  (id 8, monitor bezel H)
+  largest absolute error            :   -5.140 mm  (id 13, door panel H)
+
+  standard error of the mean        :    0.259 mm
+  95% CI on the mean signed error   : [-2.010, -0.997] mm
+  -> the CI excludes zero: the bias is REAL, not sampling noise.
+     Attribute it. The leading candidate is the Z reference origin
+     (a tape measure starts at the back glass, while Z is defined
+     from the optical centre inside the lens stack); a residual
+     focal-length error from Step 1 is the other candidate.
+
+------------------------------------------------------------------------------------------------
+TREND DIAGNOSTICS
+------------------------------------------------------------------------------------------------
+  corr(ground-truth size, signed error)  : -0.897
+     A strong positive value means error grows in proportion to size,
+     i.e. a SCALE error -- focal length or Z, not click precision.
+  corr(Z, percent error)                 : +0.508
+     A trend here implicates the Z measurement itself: a fixed origin
+     offset dZ produces a percent error dZ/Z that shrinks with distance.
+
+------------------------------------------------------------------------------------------------
+PER-DIMENSION BREAKDOWN
+------------------------------------------------------------------------------------------------
+  dimension        n  mean err mm   std err mm     MAPE %
+  D                4       -1.988        1.107      0.259
+  H                7       -1.943        1.609      0.355
+  W                9       -0.947        0.374      0.248
+
+------------------------------------------------------------------------------------------------
+ERROR PROPAGATION CHECK (plan section 12)
+------------------------------------------------------------------------------------------------
+  W = du * Z / f_x, so relative errors add:
+      dW/W  ~=  d(du)/du  +  dZ/Z  +  df_x/f_x
+  Observed spread of percent error : 0.108 %
+  The click-precision term shrinks as the pixel span grows, which is why
+  larger objects measure proportionally better -- visible in the size
+  breakdown above and in error_vs_size.png.
+================================================================================================
