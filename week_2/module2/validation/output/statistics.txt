@@ -1,5 +1,5 @@
 ================================================================================================
-STEP 3 -- VALIDATION OVER 20 MEASUREMENTS
+STEP 3 -- VALIDATION OVER 19 MEASUREMENTS
 ================================================================================================
 
   id  object             dim     Z (mm)  truth (mm)   meas (mm)  err (mm)  err (%)
@@ -7,9 +7,7 @@ STEP 3 -- VALIDATION OVER 20 MEASUREMENTS
   1   Mac                D       1000.0      356.00      317.70    -38.30   -10.76
   2   Paperback book     D       2000.0      210.00      198.67    -11.33    -5.40
   3   Water bottle       D       2000.0      277.00      259.85    -17.15    -6.19
-  4   Hydroflask         D       2000.0      130.00      168.79    +38.79   +29.84
   5   Headphone case     W       2000.0      150.00      149.38     -0.62    -0.41
-  6   Tennis Racket      W       2000.0      375.00       17.79   -357.21   -95.26
   7   Game controller    D       2000.0      150.00      120.89    -29.11   -19.41
   8   clothes hangar     D       2000.0      413.00      360.33    -52.67   -12.75
   9   Hardback book      D       2000.0      160.00      144.88    -15.12    -9.45
@@ -20,42 +18,47 @@ STEP 3 -- VALIDATION OVER 20 MEASUREMENTS
   14  Sketchbook         W       2000.0      257.00      240.60    -16.40    -6.38
   15  Duct Tape          D       2000.0      146.00      126.99    -19.01   -13.02
   16  Glasses case       D       2000.0      169.00      143.95    -25.05   -14.82
-  17  Paperback book 2   H       2000.0     2000.00      175.27  -1824.73   -91.24
   18  Power supply unit  W       2000.0      168.00      155.34    -12.66    -7.54
   19  Air filter         W       2000.0      356.00      311.77    -44.23   -12.42
   20  Mouse              W       2000.0      112.00       95.61    -16.39   -14.63
+  21  tennis racket      D       2000.0      387.00      340.24    -46.76   -12.08
+  22  paperback book 2   D       2000.0      200.00      180.69    -19.31    -9.66
 
 ------------------------------------------------------------------------------------------------
 ERROR STATISTICS
 ------------------------------------------------------------------------------------------------
-  measurements                n     : 20
-  ground-truth size range           : 77.0 .. 2000.0 mm
+  measurements                n     : 19
+  ground-truth size range           : 77.0 .. 413.0 mm
   distance range               Z    : 1000 .. 2000 mm
 
-  mean signed error                 : -125.429 mm   <- systematic bias
-  std deviation of error            :  407.513 mm   <- random spread
-  mean absolute error         MAE   :  129.309 mm
-  root-mean-square error      RMSE  :  416.529 mm
+  mean signed error                 :  -22.711 mm   <- systematic bias
+  std deviation of error            :   14.798 mm   <- random spread
+  mean absolute error         MAE   :   22.711 mm
+  root-mean-square error      RMSE  :   26.893 mm
 
-  mean signed percent error         :  -16.008 %
-  mean absolute percent error MAPE  :   18.992 %
-  std deviation of percent error    :   28.211 %
+  mean signed percent error         :   -9.750 %
+  mean absolute percent error MAPE  :    9.750 %
+  std deviation of percent error    :    4.663 %
 
-  most negative error               : -1824.730 mm  (id 17, Paperback book 2 H)
-  most positive error               :  +38.790 mm  (id 4, Hydroflask D)
-  largest absolute error            : -1824.730 mm  (id 17, Paperback book 2 H)
+  most negative error               :  -52.670 mm  (id 8, clothes hangar D)
+  most positive error               :   -0.620 mm  (id 5, Headphone case W)
+  largest absolute error            :  -52.670 mm  (id 8, clothes hangar D)
 
-  standard error of the mean        :   91.123 mm
-  95% CI on the mean signed error   : [-304.030, +53.171] mm
-  -> the CI contains zero: no statistically significant bias.
+  standard error of the mean        :    3.395 mm
+  95% CI on the mean signed error   : [-29.365, -16.057] mm
+  -> the CI excludes zero: the bias is REAL, not sampling noise.
+     Attribute it. The leading candidate is the Z reference origin
+     (a tape measure starts at the back glass, while Z is defined
+     from the optical centre inside the lens stack); a residual
+     focal-length error from Step 1 is the other candidate.
 
 ------------------------------------------------------------------------------------------------
 TREND DIAGNOSTICS
 ------------------------------------------------------------------------------------------------
-  corr(ground-truth size, signed error)  : -0.977
+  corr(ground-truth size, signed error)  : -0.799
      A strong positive value means error grows in proportion to size,
      i.e. a SCALE error -- focal length or Z, not click precision.
-  corr(Z, percent error)                 : -0.044
+  corr(Z, percent error)                 : +0.052
      A trend here implicates the Z measurement itself: a fixed origin
      offset dZ produces a percent error dZ/Z that shrinks with distance.
 
@@ -63,16 +66,15 @@ TREND DIAGNOSTICS
 PER-DIMENSION BREAKDOWN
 ------------------------------------------------------------------------------------------------
   dimension        n  mean err mm   std err mm     MAPE %
-  D               13      -18.181       21.862     11.690
-  H                1    -1824.730        0.000     91.236
-  W                6      -74.585      139.195     22.774
+  D               14      -24.372       14.600     10.276
+  W                5      -18.060       15.998      8.278
 
 ------------------------------------------------------------------------------------------------
 ERROR PROPAGATION CHECK (plan section 12)
 ------------------------------------------------------------------------------------------------
   W = du * Z / f_x, so relative errors add:
       dW/W  ~=  d(du)/du  +  dZ/Z  +  df_x/f_x
-  Observed spread of percent error : 28.211 %
+  Observed spread of percent error : 4.663 %
   The click-precision term shrinks as the pixel span grows, which is why
   larger objects measure proportionally better -- visible in the size
   breakdown above and in error_vs_size.png.
