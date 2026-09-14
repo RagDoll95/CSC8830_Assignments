@@ -82,11 +82,11 @@ ASSIGNMENTS = [
         path=os.path.join("week_2", "module2"),
         module="modules.module2",
         summary="Calibrate a smartphone camera, invert the perspective projection "
-                "at a known object distance to measure real objects, score the "
-                "result against ruler ground truth over 20 measurements, and "
-                "derive the two-camera relationship.",
-        parts=["Part A - calibration", "Part B - measurement",
-               "Part C - validation", "Part D - two-camera theory"],
+                "at a known object distance to measure real objects, and score "
+                "the result against ruler ground truth over 20 measurements.",
+        # The three pages, which are the three things done in a browser. Part D
+        # is written, not interactive: theory/two_camera_derivation.md.
+        parts=["Calibration", "Measure", "Records"],
     ),
 ]
 

@@ -1,41 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Step 2 &mdash; Measurement{% endblock %}
+{% block title %}Module 2 &mdash; Measure{% endblock %}
 
 {% block content %}
-<h1>Step 2 &mdash; Real-world 2D measurement</h1>
-<p class="lead">
-  Upload an image, enter the object distance Z, then click two points. The clicks are
-  converted from canvas coordinates to full-resolution image coordinates server-side,
-  undistorted with <code class="inline">cv2.undistortPoints</code>, and backprojected to
-  3D at depth Z. The dimension is the distance between the two backprojected points.
-</p>
+<h1>Measure</h1>
 
+{% if recorded %}
+<div class="ok">
+  Recorded as id {{ recorded }}.
+  <a href="{{ url_for('module2.records') }}">See all records &rarr;</a>
+</div>
+{% endif %}
+{% if purged %}
+<div class="ok small">
+  Replaced the rendered sample measurement data on disk ({{ purged }} file(s)).
+</div>
+{% endif %}
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
-{% if cam_error %}<div class="err">{{ cam_error }}</div>{% endif %}
+{% if cam_error %}
+<div class="err">{{ cam_error }}
+  <a href="{{ url_for('module2.index') }}">Calibrate first &rarr;</a>
+</div>
+{% endif %}
 {% if resolution_error %}<div class="err"><strong>Refused.</strong> {{ resolution_error }}</div>{% endif %}
-{% if resolution_warning %}<div class="warn"><strong>Warning.</strong> {{ resolution_warning }}</div>{% endif %}
+{% if resolution_warning %}<div class="warn small">{{ resolution_warning }}</div>{% endif %}
+{% if synthetic %}
+<div class="warn small">
+  The listed photos are <strong>rendered, not photographed</strong>. Uploading your
+  own replaces them, and the records logged against them, permanently.
+</div>
+{% endif %}
 
 <div class="grid2">
   <div class="panel">
-    <h2>Load an image</h2>
+    <h2>Load a photo</h2>
     <form method="post" enctype="multipart/form-data">
-      <label for="image">Image file</label>
+      <label for="image">Upload</label>
       <input type="file" id="image" name="image" accept="image/*">
 
-      {% if samples %}
-      <label for="sample">&hellip; or pick a bundled sample</label>
-      <select id="sample" name="sample">
-        <option value="">(use the uploaded file)</option>
-        {% for s in samples %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      {% if images %}
+      <label for="existing">&hellip; or one already loaded</label>
+      <select id="existing" name="existing">
+        <option value="">(use the upload)</option>
+        {% for s in images %}
+        <option value="{{ s }}" {{ 'selected' if s == image_name }}>{{ s }}</option>
+        {% endfor %}
       </select>
       {% endif %}
 
-      <label for="Z">Z &mdash; distance from the optical centre to the object plane (mm)</label>
-      <input type="number" id="Z" name="Z" step="1" min="1" value="{{ z_default or 2400 }}" required>
+      <label for="Z">Z &mdash; optical centre to the object plane (mm)</label>
+      <input type="number" id="Z" name="Z" step="1" min="1" value="{{ z_default }}" required>
 
       <label class="inline-label">
         <input type="checkbox" name="allow_scaling" value="1" {{ 'checked' if allow_scaling }}>
-        Rescale K if the resolution differs (approximate &mdash; assumes a pure resize)
+        Rescale K if the resolution differs (approximate)
       </label>
 
       <button type="submit">Load</button>
@@ -45,7 +62,6 @@
   <div class="panel">
     <h2>Active camera</h2>
     {% if cam %}
-    <p class="small muted">from <code class="inline">{{ params_path }}</code></p>
     <dl class="kv">
       <dt>f<sub>x</sub>, f<sub>y</sub></dt><dd>{{ "%.2f"|format(cam.fx) }}, {{ "%.2f"|format(cam.fy) }} px</dd>
       <dt>c<sub>x</sub>, c<sub>y</sub></dt><dd>{{ "%.2f"|format(cam.cx) }}, {{ "%.2f"|format(cam.cy) }} px</dd>
@@ -53,15 +69,9 @@
       <dt>RMS</dt><dd>{{ "%.4f"|format(cam.rms) }} px</dd>
     </dl>
     {% else %}
-    <div class="warn">Calibrate first on the <a href="{{ url_for('module2.calibration') }}">Step 1</a> page.</div>
+    <div class="warn">No calibration loaded.</div>
     {% endif %}
-    <div class="note small">
-      <strong>Getting Z right matters more than anything else here.</strong>
-      Measure to the camera's optical centre, not the phone's back glass &mdash; the
-      difference is 5&ndash;10 mm, a systematic bias on every measurement. Keep the
-      object centred in frame, or the straight-line distance is Z/cos&thinsp;&theta;
-      rather than Z. Measure to the face being measured.
-    </div>
+    <p class="small muted">{{ record_count }} measurement(s) recorded so far.</p>
   </div>
 </div>
 
@@ -69,31 +79,62 @@
 <div class="panel">
   <h2>Click two points</h2>
   <p class="small muted">
-    {{ image_name }} &mdash; natural size {{ nat_w }}&times;{{ nat_h }} px.
-    Click once for each endpoint; a third click starts over.
-    <button type="button" id="reset" class="secondary" style="margin:0 0 0 8px;padding:4px 12px;font-size:13px">Reset</button>
+    {{ image_name }} &mdash; {{ nat_w }}&times;{{ nat_h }} px.
+    <button type="button" id="reset" class="secondary"
+            style="margin:0 0 0 8px;padding:4px 12px;font-size:13px">Reset</button>
   </p>
 
-  <div id="canvas-wrap">
-    <canvas id="canvas"></canvas>
-  </div>
-
+  <div id="canvas-wrap"><canvas id="canvas"></canvas></div>
   <div id="status" class="small muted" style="margin-top:10px">Waiting for the first click&hellip;</div>
 
   <div id="results" style="display:none">
     <div class="readout">
       <div class="stat">
-        <div class="label">Width &mdash; |&Delta;X|</div>
+        <div class="label">W &mdash; |&Delta;X|</div>
         <div class="value" id="out-w">&mdash;</div>
       </div>
       <div class="stat">
-        <div class="label">Height &mdash; |&Delta;Y|</div>
+        <div class="label">H &mdash; |&Delta;Y|</div>
         <div class="value" id="out-h">&mdash;</div>
       </div>
       <div class="stat">
-        <div class="label">Length &mdash; diagonal</div>
+        <div class="label">D &mdash; diagonal</div>
         <div class="value" id="out-l">&mdash;</div>
       </div>
+    </div>
+
+    <div class="panel record">
+      <h3>Record this measurement</h3>
+      <form method="post" action="{{ url_for('module2.record_add') }}" class="recordform">
+        <input type="hidden" name="image_file" value="{{ image_name }}">
+        <input type="hidden" name="Z_mm" id="rec-Z" value="{{ z_default }}">
+        <input type="hidden" name="allow_scaling" id="rec-scale"
+               value="{{ '1' if allow_scaling else '' }}">
+        <input type="hidden" name="u1" id="rec-u1">
+        <input type="hidden" name="v1" id="rec-v1">
+        <input type="hidden" name="u2" id="rec-u2">
+        <input type="hidden" name="v2" id="rec-v2">
+        <div class="row3">
+          <div>
+            <label for="rec-object">Object</label>
+            <input type="text" id="rec-object" name="object" placeholder="hardback book" required>
+          </div>
+          <div>
+            <label for="rec-dimension">Dimension</label>
+            <select id="rec-dimension" name="dimension">
+              {% for code, label in dimensions %}
+              <option value="{{ code }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="rec-gt">Ruler ground truth (mm)</label>
+            <input type="number" id="rec-gt" name="ground_truth_mm" step="0.01" min="0.01" required>
+          </div>
+        </div>
+        <button type="submit">Record</button>
+        <span class="small muted" id="rec-hint" style="margin-left:10px"></span>
+      </form>
     </div>
 
     <div class="grid2">
@@ -123,32 +164,50 @@
             <tr><td>dominant term</td><td class="num" id="unc-dom">&mdash;</td></tr>
           </tbody>
         </table>
-        <p class="small muted">
-          Since W = &Delta;u&thinsp;&middot;&thinsp;Z / f<sub>x</sub>, the relative errors add:
-          &delta;W/W &asymp; &delta;(&Delta;u)/&Delta;u + &delta;Z/Z + &delta;f<sub>x</sub>/f<sub>x</sub>.
-          Larger objects measure better because a bigger &Delta;u shrinks the click term.
-        </p>
       </div>
     </div>
 
-    <h3>Annotated output</h3>
-    <p class="small muted">Saved automatically &mdash; this is the figure for the report.</p>
+    <h3>Annotated</h3>
     <img id="annotated" src="" alt="annotated result"
          style="max-width:100%;border:1px solid var(--line);border-radius:6px">
   </div>
 </div>
 {% endif %}
+
+<details class="panel">
+  <summary><strong>Method</strong> <span class="small muted">the inverted projection, and what bounds it</span></summary>
+  <div class="math">u = f_x &middot; X/Z + c_x        v = f_y &middot; Y/Z + c_y        (forward)
+
+X = (u &minus; c_x) &middot; Z / f_x    Y = (v &minus; c_y) &middot; Z / f_y    (inverted at known Z)</div>
+  <p class="small">
+    Clicks are converted from canvas to full-resolution image coordinates
+    server-side, undistorted with <code class="inline">cv2.undistortPoints</code>,
+    then backprojected to 3D at depth Z; a dimension is the Euclidean distance
+    between two backprojections. For an axis-aligned span this collapses to
+    <code class="inline">W = &Delta;u &middot; Z / f_x</code>, so the relative
+    errors add: &delta;W/W &asymp; &delta;(&Delta;u)/&Delta;u + &delta;Z/Z +
+    &delta;f<sub>x</sub>/f<sub>x</sub>. Larger objects measure better because a
+    bigger &Delta;u shrinks the click term.
+  </p>
+  <p class="small">
+    Z dominates in practice. Measure to the camera's optical centre, not the
+    phone's back glass &mdash; 5&ndash;10 mm of difference is a systematic bias on
+    every measurement &mdash; and keep the object centred, or the straight-line
+    distance is Z/cos&thinsp;&theta; rather than Z. The method assumes the measured
+    face is fronto-parallel at a single depth; tilt or object thickness violates
+    that, and no single Z makes it exact. A second view removes the dependence on Z
+    entirely by triangulation, derived in
+    <code class="inline">week_2/module2/theory/two_camera_derivation.md</code>.
+  </p>
+</details>
 {% endblock %}
 
 {% block scripts %}
 {% if image_url %}
 <script>
 (function () {
-  // Natural (full-resolution) size. K was calibrated at full resolution, so
-  // every click must be converted back to these coordinates before it reaches
-  // the geometry -- the conversion itself happens server-side.
-  const NAT_W = {{ nat_w }}, NAT_H = {{ nat_h }};
-  const TOKEN = {{ token|tojson }};
+  // K was calibrated at full resolution, so every click must be converted back
+  // to those coordinates before it reaches the geometry -- server-side.
   const IMAGE_NAME = {{ image_name|tojson }};
   const ALLOW_SCALING = {{ 'true' if allow_scaling else 'false' }};
 
@@ -161,7 +220,6 @@
   let busy = false;
 
   img.onload = function () {
-    // Fit the canvas to the column while keeping the aspect ratio.
     const maxW = Math.min(1040, canvas.parentElement.parentElement.clientWidth - 4);
     const scale = Math.min(1, maxW / img.naturalWidth);
     canvas.width = Math.round(img.naturalWidth * scale);
@@ -203,8 +261,7 @@
     pts.push({ x: x, y: y });
     redraw();
     if (pts.length === 1) {
-      statusEl.textContent = 'First point set. Click the second point.';
-      statusEl.className = 'small muted';
+      setStatus('First point set. Click the second point.');
     } else {
       submit();
     }
@@ -213,33 +270,31 @@
   document.getElementById('reset').addEventListener('click', function () {
     pts = [];
     resultsEl.style.display = 'none';
-    statusEl.textContent = 'Waiting for the first click…';
-    statusEl.className = 'small muted';
+    setStatus('Waiting for the first click…');
     redraw();
   });
+
+  function setStatus(text, bad) {
+    statusEl.textContent = text;
+    statusEl.className = 'small' + (bad ? '' : ' muted');
+    statusEl.style.color = bad ? 'var(--bad)' : '';
+  }
 
   function fmt(v, digits) { return Number(v).toFixed(digits === undefined ? 2 : digits); }
 
   function submit() {
     const Z = parseFloat(document.getElementById('Z').value);
-    if (!(Z > 0)) {
-      statusEl.textContent = 'Enter a positive Z first.';
-      statusEl.className = 'small';
-      statusEl.style.color = 'var(--bad)';
-      return;
-    }
+    if (!(Z > 0)) { setStatus('Enter a positive Z first.', true); return; }
     busy = true;
-    statusEl.textContent = 'Measuring…';
-    statusEl.className = 'small muted';
+    setStatus('Measuring…');
 
     fetch({{ url_for('module2.api_measure')|tojson }}, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token: TOKEN, image_name: IMAGE_NAME, Z: Z,
-        // Display size AND natural size both go up; the server does the scaling.
+        image_name: IMAGE_NAME, Z: Z,
+        // The canvas size goes up; the server does the scaling.
         disp_w: canvas.width, disp_h: canvas.height,
-        nat_w: NAT_W, nat_h: NAT_H,
         x1: pts[0].x, y1: pts[0].y, x2: pts[1].x, y2: pts[1].y,
         allow_scaling: ALLOW_SCALING
       })
@@ -248,9 +303,7 @@
     .then(function (res) {
       busy = false;
       if (!res.ok || res.body.error) {
-        statusEl.textContent = 'Error: ' + (res.body.error || 'request failed');
-        statusEl.className = 'small';
-        statusEl.style.color = 'var(--bad)';
+        setStatus('Error: ' + (res.body.error || 'request failed'), true);
         return;
       }
       const r = res.body.result, u = res.body.uncertainty;
@@ -277,20 +330,31 @@
         document.getElementById('unc-dom').textContent = u.dominant;
       }
 
+      // The record form posts the full-resolution pixels back, so the server
+      // recomputes measured_mm rather than trusting the number on screen.
+      document.getElementById('rec-u1').value = r.p1_px[0];
+      document.getElementById('rec-v1').value = r.p1_px[1];
+      document.getElementById('rec-u2').value = r.p2_px[0];
+      document.getElementById('rec-v2').value = r.p2_px[1];
+      document.getElementById('rec-Z').value = Z;
+      updateHint();
+
       document.getElementById('annotated').src = res.body.annotated_url + '?t=' + Date.now();
       resultsEl.style.display = 'block';
-      statusEl.style.color = '';
-      statusEl.className = 'small muted';
-      statusEl.textContent = 'Measured. Click again to start a new measurement.'
-        + (res.body.warning ? '  WARNING: ' + res.body.warning : '');
+      setStatus('Measured. Click again to start over.'
+        + (res.body.warning ? '  WARNING: ' + res.body.warning : ''));
     })
-    .catch(function (e) {
-      busy = false;
-      statusEl.textContent = 'Request failed: ' + e;
-      statusEl.className = 'small';
-      statusEl.style.color = 'var(--bad)';
-    });
+    .catch(function (e) { busy = false; setStatus('Request failed: ' + e, true); });
   }
+
+  const dimSel = document.getElementById('rec-dimension');
+  function updateHint() {
+    const key = { W: 'out-w', H: 'out-h', D: 'out-l' }[dimSel.value];
+    const shown = document.getElementById(key).textContent.trim();
+    document.getElementById('rec-hint').textContent =
+      shown ? 'will record ' + dimSel.value + ' = ' + shown : '';
+  }
+  dimSel.addEventListener('change', updateHint);
 })();
 </script>
 {% endif %}

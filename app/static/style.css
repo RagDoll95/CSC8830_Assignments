@@ -156,6 +156,32 @@ code.inline { background: #eef1f5; padding: 1px 5px; border-radius: 3px; font-si
 .pill.pass { background: #e0f2e7; color: var(--good); }
 .pill.fail { background: #fbe3e3; color: var(--bad); }
 
+/* Prose that is worth having on hand but not worth reading aloud lives in a
+   <details class="panel">, so a page opens as controls and numbers only. */
+details.panel > summary {
+  cursor: pointer; list-style: none; font-size: 14px;
+  display: flex; align-items: baseline; gap: 8px;
+}
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::before {
+  content: "\25B8"; color: var(--accent); font-size: 12px;
+}
+details.panel[open] > summary::before { content: "\25BE"; }
+details.panel[open] > summary { margin-bottom: 4px; }
+
+/* The record form: three fields on one line, because it sits between the
+   measurement and the table and should not push either off screen. */
+.row3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 14px; }
+@media (max-width: 760px) { .row3 { grid-template-columns: 1fr; } }
+.row3 label { margin-top: 0; }
+.panel.record { background: var(--accent-soft); border-color: #cfe0f2; }
+.panel.record h3 { margin-top: 0; }
+.recordform { margin: 0; }
+
+/* A delete button inside a table cell must not inherit the 14px top margin
+   every other button on the page wants. */
+td form { margin: 0; }
+
 label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
 input[type=text], input[type=number], input[type=file], select {
   width: 100%; padding: 8px 10px; border: 1px solid var(--line);

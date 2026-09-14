@@ -1,50 +1,74 @@
 """Module 2 -- camera calibration and real-world measurement, as a blueprint.
 
-PAGES
-    /module-2/              overview + navigation
-    /module-2/calibration   Step 1: upload board images, fit, download camera_params.yaml
-    /module-2/measurement   Step 2: upload an image, enter Z, click two points, measure
-    /module-2/validation    Step 3: load the CSV, see the table, statistics and plots
-    /module-2/theory        Part D: the two-camera derivation
+THREE PAGES, ONE PER THING YOU ACTUALLY DO
+    /module-2/          Calibration  board photos in, K and the distortion out
+    /module-2/measure   Measure      photo + Z, click two points, record the result
+    /module-2/records   Records      the logged measurements, statistics, figures
 
-HOW TO RUN
-    # from the repository root
-    pip install -r week_2/module2/requirements.txt
-    python app/app.py
-    # then open http://127.0.0.1:5000
+    It used to be five: an overview that only restated the navigation bar, one
+    page per lettered part, and the Part D derivation. The derivation is a
+    written deliverable, not something done in a browser, so it lives in
+    theory/two_camera_derivation.md and goes into the PDF from there.
 
-WHY THIS IS A BLUEPRINT AND NOT A FLASK APP
-    app/app.py owns the Flask instance and mounts one blueprint per assignment,
-    so a single server reaches every assignment in the repo from one home page.
-    This file owns Module 2 and nothing else.
+UPLOADS REPLACE THE SYNTHETIC DATA, PERMANENTLY
+    The assignment ships rendered `synthetic_*` stand-in data so the pipeline
+    can be scored before any real photo exists. Uploading real photos deletes
+    it from disk rather than hiding it -- see app/dataset.py for why -- so it
+    cannot reappear on screen later in a presentation. Two independent
+    triggers, because the two datasets are independent:
 
-WHERE MODULE 2's CODE LIVES
-    Only the web layer moved up to app/. The assignment's own code stays in
-    week_2/module2/{calibration,measurement,validation,theory}, and the path to
-    it comes from the registry in app/assignments.py -- one line to change if
-    the module is ever moved or renamed, and this file does not move with it.
+        board photos on Calibration -> calibration/data/images, the corner
+            overlays and synthetic_ground_truth.yaml are replaced
+        a photo on Measure          -> validation/data/images, the synthetic
+            measurements.csv and the plots derived from it are replaced
 
-DESIGN RULE
-    No geometry lives in this file. Every number comes from
-    week_2/module2/measurement/geometry.py and .../calibration/calibrate.py --
-    the same code the CLI uses -- so the web app and the CLI cannot disagree.
-    week_2/module2/tools/verify_pipeline.py asserts that they do not.
+    Calibration swaps only after the fit succeeds (app/dataset.py stage/install),
+    so a batch the corner detector rejects leaves the previous data intact
+    instead of emptying the page.
+
+ONE CAMERA FILE, NOT AN ACTIVE-PARAMS POINTER
+    calibration/output/camera_params.yaml is the calibration, for this blueprint
+    and for the CLI both. A web fit overwrites it. There is deliberately no
+    "which of several fits is active" marker: it was a second source of truth
+    that could disagree with what the Records page had already been computed
+    from.
 
 THE ONE REAL GOTCHA (plan section 25)
     Canvas clicks arrive in DISPLAY coordinates. A 2016-px-wide photo shown in
     an 800-px canvas means every click must be multiplied by 2016/800 = 2.52
     before it reaches the geometry, or every measurement is wrong by that
-    factor. The browser therefore posts the natural image dimensions alongside
-    each click, and scale_click() below does the conversion server-side, on the
-    full-resolution image, because K was calibrated at full resolution.
+    factor. The browser posts the canvas size alongside each click and
+    scale_click() does the conversion server-side, against the server's own
+    read of the file, because K is in pixels at the calibration resolution.
+
+RECORDING IS EXPLICIT, AND THE SERVER RECOMPUTES
+    A two-click measurement is not a record until the object, the dimension and
+    the ruler ground truth are entered and Record is pressed, so mis-clicks
+    never reach the CSV. The form posts the pixel coordinates back and the
+    server recomputes measured_mm from them -- the browser's number is never
+    trusted -- which is what keeps the CSV internally consistent and
+    recomputable by `analyze.py --recompute` after any change to the geometry.
+
+REPORT FIGURES
+    Each recorded row also writes a downscaled annotated JPEG to
+    validation/output/figures/, sized for a document rather than for a phone
+    sensor, and the Records page zips them. The full-resolution original stays
+    in validation/data/images/ so a row can be recomputed.
+
+NO GEOMETRY LIVES IN THIS FILE
+    Every number comes from week_2/module2/measurement/geometry.py,
+    .../calibration/calibrate.py and .../validation/analyze.py -- the same code
+    the CLI runs -- so the web app and the CLI cannot disagree.
+    week_2/module2/tools/verify_pipeline.py asserts that they do not.
 """
 
 import csv
 import io
+import math
 import os
-import shutil
+import re
 import sys
-import uuid
+import zipfile
 
 import cv2
 import numpy as np
@@ -59,6 +83,7 @@ if APP_DIR not in sys.path:
     # directly to check the click scaling against the CLI.
     sys.path.insert(0, APP_DIR)
 
+import dataset  # noqa: E402
 from assignments import REPO_ROOT, UPLOAD_ROOT, get  # noqa: E402
 
 ASSIGNMENT = get("module-2")
@@ -67,23 +92,75 @@ MODULE = ASSIGNMENT.dir                     # <repo>/week_2/module2
 for _part in ("measurement", "calibration", "validation"):
     sys.path.insert(0, os.path.join(MODULE, _part))
 
+# geometry.measure is aliased because the Measure page's view function owns the
+# name `measure` in this module -- the endpoint is url_for('module2.measure'),
+# and renaming the view to dodge a collision would rename the URL with it.
 from geometry import (CalibrationError, annotate, check_resolution,  # noqa: E402
-                      load_params, measure, measure_uncertainty)
+                      load_params, measure_uncertainty)
+from geometry import measure as measure_span  # noqa: E402
 import calibrate as calib  # noqa: E402
 import analyze  # noqa: E402
 
-UPLOADS = os.path.join(UPLOAD_ROOT, ASSIGNMENT.slug)
-DEFAULT_PARAMS = os.path.join(MODULE, "calibration", "output", "camera_params.yaml")
-DEFAULT_CSV = os.path.join(MODULE, "validation", "data", "measurements.csv")
-VALIDATION_OUTPUT = os.path.join(MODULE, "validation", "output")
-SAMPLE_MEAS_DIR = os.path.join(MODULE, "validation", "data", "images")
-CALIB_DEBUG_DIR = os.path.join(MODULE, "calibration", "output", "debug")
 
-# Phone photos are large; the request-size cap lives in app/app.py because it
-# is a property of the Flask instance. Non-images are rejected here.
+def _m(*parts):
+    return os.path.join(MODULE, *parts)
+
+
+# The assignment's own folders. Uploads land in these, which is what makes the
+# replacement of the synthetic data persist across restarts.
+BOARD_IMAGES = _m("calibration", "data", "images")
+BOARD_DEBUG = _m("calibration", "output", "debug")
+PARAMS = _m("calibration", "output", "camera_params.yaml")
+BOARD_ERROR_CSV = _m("calibration", "output", "reprojection_errors.csv")
+BOARD_SYNTH_TRUTH = _m("calibration", "data", "synthetic_ground_truth.yaml")
+
+MEAS_IMAGES = _m("validation", "data", "images")
+RECORDS_CSV = _m("validation", "data", "measurements.csv")
+VAL_OUTPUT = _m("validation", "output")
+FIGURES = _m("validation", "output", "figures")
+STATS_TXT = _m("validation", "output", "statistics.txt")
+AUGMENTED_CSV = _m("validation", "output", "measurements_with_errors.csv")
+
+# Derived from the synthetic CSV, so they go when it does. Named explicitly
+# because nothing about "error_vs_size.png" reveals what produced it.
+SYNTH_DERIVED = (
+    _m("validation", "data", "synthetic_truth.csv"),
+    _m("validation", "data", "measurements_bias_only.csv"),
+    _m("validation", "output", "error_vs_size.png"),
+    _m("validation", "output", "error_vs_Z.png"),
+    _m("validation", "output", "error_distribution.png"),
+    STATS_TXT,
+    AUGMENTED_CSV,
+)
+PLOT_NAMES = ("error_vs_size.png", "error_vs_Z.png", "error_distribution.png")
+
+# Session scratch: staging for a calibration fit, and the annotated preview
+# shown before a measurement is recorded. Git-ignored; nothing here is source.
+SCRATCH = os.path.join(UPLOAD_ROOT, ASSIGNMENT.slug)
+PREVIEW = os.path.join(SCRATCH, "preview")
+
 ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
+CSV_COLUMNS = ["id", "image_file", "object", "dimension", "Z_mm",
+               "ground_truth_mm", "measured_mm", "u1", "v1", "u2", "v2"]
+
+# The CSV's dimension codes, and which measured component each one means.
+DIMENSIONS = [("W", "W — width, |ΔX|"),
+              ("H", "H — height, |ΔY|"),
+              ("D", "D — diagonal, the full span")]
+MEASURED_KEY = {"W": "width_mm", "H": "height_mm", "D": "length_mm"}
+
+# Wide enough to fill a page in a document, small enough to embed twenty of
+# them; a phone original is 3-4x this and bloats the PDF for no visible gain.
+FIGURE_MAX_PX = 1400
+
 bp = Blueprint("module2", __name__)
+
+NAV = [
+    ("module2.index", "Calibration", ""),
+    ("module2.measure", "Measure", ""),
+    ("module2.records", "Records", ""),
+]
 
 
 # --------------------------------------------------------------------------
@@ -106,82 +183,172 @@ def allowed_image(filename):
     return os.path.splitext(filename)[1].lower() in ALLOWED_IMAGE_EXT
 
 
-def session_dir(token=None, create=True):
-    token = token or uuid.uuid4().hex[:12]
-    if not all(c in "0123456789abcdef" for c in token):
-        abort(400, "bad token")
-    path = os.path.join(UPLOADS, token)
-    if create:
-        os.makedirs(path, exist_ok=True)
-    return token, path
-
-
-def active_params_path():
-    """The most recent web-fitted calibration, else the CLI's output."""
-    marker = os.path.join(UPLOADS, "active_params.txt")
-    if os.path.exists(marker):
-        with open(marker) as fh:
-            candidate = fh.read().strip()
-        if candidate and os.path.exists(candidate):
-            return candidate
-    return DEFAULT_PARAMS
-
-
-def set_active_params(path):
-    os.makedirs(UPLOADS, exist_ok=True)
-    with open(os.path.join(UPLOADS, "active_params.txt"), "w") as fh:
-        fh.write(path)
-
-
 def camera_or_none():
     try:
-        return load_params(active_params_path()), None
+        return load_params(PARAMS), None
     except CalibrationError as exc:
         return None, str(exc)
 
 
-# --------------------------------------------------------------------------
-# Navigation -- one nav bar across every page of this assignment, so a screen
-# recording can walk it without retyping URLs. app/app.py injects this into
-# the templates rendered under this blueprint.
-# --------------------------------------------------------------------------
-NAV = [
-    ("module2.index", "Overview", ""),
-    ("module2.calibration", "Step 1 - Calibration", "Part A"),
-    ("module2.measurement", "Step 2 - Measurement", "Part B"),
-    ("module2.validation", "Step 3 - Validation", "Part C"),
-    ("module2.theory", "Theory - Two Cameras", "Part D"),
-]
+def listdir_images(path):
+    if not os.path.isdir(path):
+        return []
+    return sorted(n for n in os.listdir(path) if allowed_image(n))
+
+
+def safe_name(name):
+    """A basename that cannot escape the folder it is joined to."""
+    clean = secure_filename(os.path.basename(str(name)))
+    if not clean:
+        abort(400, "bad filename")
+    return clean
+
+
+def capture_name(name):
+    """safe_name(), plus a guarantee the result is not mistaken for a render.
+
+    purge_synthetic() deletes by the synthetic_* naming convention, so a real
+    upload that happened to be called synthetic_board.jpg would be deleted by
+    the *next* upload as if it had been rendered. Renaming on the way in keeps
+    that convention meaning exactly one thing.
+    """
+    clean = safe_name(name)
+    return "capture_" + clean if dataset.is_synthetic(clean) else clean
 
 
 # --------------------------------------------------------------------------
-# Overview
+# The records CSV -- the one file the Measure and Records pages share
 # --------------------------------------------------------------------------
-@bp.route("/")
+def read_records():
+    if not os.path.exists(RECORDS_CSV):
+        return []
+    with open(RECORDS_CSV, newline="") as fh:
+        return [r for r in csv.DictReader(fh) if (r.get("id") or "").strip()]
+
+
+def write_records(rows):
+    os.makedirs(os.path.dirname(RECORDS_CSV), exist_ok=True)
+    with open(RECORDS_CSV, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS,
+                                extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def next_record_id(rows):
+    used = []
+    for r in rows:
+        try:
+            used.append(int(r["id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return max(used) + 1 if used else 1
+
+
+def synthetic_records(rows):
+    """True if every row references a rendered image -- i.e. the shipped CSV.
+
+    Checked by provenance rather than by a flag: the rows themselves name the
+    images they came from, so a CSV that is half real is left alone.
+    """
+    return bool(rows) and all(
+        dataset.is_synthetic(r.get("image_file", "")) for r in rows)
+
+
+def adopt_real_measurements():
+    """First real measurement photo: drop the synthetic measurement dataset.
+
+    The rendered sample photos, the CSV logged against them, and every
+    statistic and plot derived from that CSV. Returns what was removed so the
+    page can say so.
+    """
+    removed = dataset.purge_synthetic(MEAS_IMAGES)
+    removed += dataset.remove(*SYNTH_DERIVED)
+    if synthetic_records(read_records()):
+        removed += dataset.remove(RECORDS_CSV)
+    if os.path.isdir(FIGURES):
+        removed += dataset.purge_synthetic(FIGURES)
+    return removed
+
+
+def figure_name(row):
+    slug = re.sub(r"[^a-z0-9]+", "-", str(row["object"]).lower()).strip("-")
+    return "%03d_%s_%s.jpg" % (int(row["id"]), slug or "object",
+                               row["dimension"])
+
+
+def write_report_figure(row, image_path, p1, p2, result):
+    """A downscaled annotated JPEG of one recorded measurement.
+
+    The original stays full resolution in validation/data/images so the row can
+    be recomputed; this is the copy that goes in the report.
+    """
+    img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if img is None:
+        return None
+    label = "%s = %.1f mm  (truth %.1f mm)" % (
+        row["dimension"], float(row["measured_mm"]),
+        float(row["ground_truth_mm"]))
+    out = annotate(img, p1, p2, result, label=label)
+
+    h, w = out.shape[:2]
+    if max(w, h) > FIGURE_MAX_PX:
+        # INTER_AREA is the correct filter for shrinking; the default bilinear
+        # aliases the annotation lines into a dashed mess.
+        s = FIGURE_MAX_PX / float(max(w, h))
+        out = cv2.resize(out, (int(round(w * s)), int(round(h * s))),
+                         interpolation=cv2.INTER_AREA)
+
+    os.makedirs(FIGURES, exist_ok=True)
+    name = figure_name(row)
+    cv2.imwrite(os.path.join(FIGURES, name), out,
+                [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return name
+
+
+def refresh_outputs(rows):
+    """Recompute statistics.txt, the augmented CSV and the plots from rows.
+
+    Run on every change to the records so the Records page can never show a
+    plot drawn from data that has since been edited. Below three rows there is
+    nothing to plot, and the stale files are removed rather than left behind.
+    """
+    if len(rows) < 2:
+        dataset.remove(STATS_TXT, AUGMENTED_CSV,
+                       *[os.path.join(VAL_OUTPUT, n) for n in PLOT_NAMES])
+        return
+    try:
+        gt, meas, Z, err, pct, stats = analyze.compute(rows)
+    except (ValueError, KeyError, ZeroDivisionError):
+        return
+    os.makedirs(VAL_OUTPUT, exist_ok=True)
+    with open(STATS_TXT, "w") as fh:
+        fh.write(analyze.report(rows, gt, meas, Z, err, pct, stats))
+    analyze.write_augmented_csv(rows, err, pct, AUGMENTED_CSV)
+    if len(rows) >= 3:
+        try:
+            analyze.make_plots(gt, Z, err, pct, rows, VAL_OUTPUT)
+        except Exception:       # matplotlib missing, or a backend that is not
+            pass                # available headless -- the tables still stand
+
+
+# --------------------------------------------------------------------------
+# Calibration -- the landing page
+# --------------------------------------------------------------------------
+@bp.route("/", methods=["GET", "POST"])
 def index():
-    cam, err = camera_or_none()
-    csv_rows = 0
-    if os.path.exists(DEFAULT_CSV):
-        with open(DEFAULT_CSV, newline="") as fh:
-            csv_rows = sum(1 for _ in csv.DictReader(fh))
-    return render_template("module2/index.html", cam=cam, cam_error=err,
-                           params_path=os.path.relpath(active_params_path(), REPO_ROOT),
-                           csv_rows=csv_rows)
-
-
-# --------------------------------------------------------------------------
-# Step 1 -- calibration
-# --------------------------------------------------------------------------
-@bp.route("/calibration", methods=["GET", "POST"])
-def calibration():
     cam, err = camera_or_none()
     context = {
         "cam": cam, "cam_error": err,
-        "params_path": os.path.relpath(active_params_path(), REPO_ROOT),
-        "existing_debug": sorted(os.listdir(CALIB_DEBUG_DIR))[:12]
-        if os.path.isdir(CALIB_DEBUG_DIR) else [],
+        "params_path": os.path.relpath(PARAMS, REPO_ROOT),
+        "board_images": listdir_images(BOARD_IMAGES),
+        "overlays": listdir_images(BOARD_DEBUG)[:12],
+        "synthetic": any(dataset.is_synthetic(n)
+                         for n in listdir_images(BOARD_IMAGES)),
         "pattern_default": "%dx%d" % calib.PATTERN_SIZE,
         "square_default": calib.SQUARE_SIZE_MM,
+        "params_exist": os.path.exists(PARAMS),
     }
     if request.method == "GET":
         return render_template("module2/calibration.html", **context)
@@ -195,41 +362,47 @@ def calibration():
         pattern_size = calib.parse_pattern(request.form.get("pattern", "9x6"))
         square = float(request.form.get("square_size", calib.SQUARE_SIZE_MM))
     except (ValueError, IndexError):
-        context["error"] = "Pattern must look like 9x6 and square size must be a number."
+        context["error"] = ("Pattern must look like 9x6 and the square size "
+                            "must be a number.")
         return render_template("module2/calibration.html", **context), 400
     if square <= 0:
         context["error"] = "Square size must be positive."
         return render_template("module2/calibration.html", **context), 400
 
-    token, sess = session_dir()
-    img_dir = os.path.join(sess, "images")
-    debug_dir = os.path.join(sess, "debug")
-    os.makedirs(img_dir, exist_ok=True)
+    # Staged, not installed: the existing dataset survives a failed fit.
+    os.makedirs(SCRATCH, exist_ok=True)
+    staging = dataset.stage(SCRATCH)
+    staged_images = os.path.join(staging, "images")
+    staged_debug = os.path.join(staging, "debug")
+    os.makedirs(staged_images, exist_ok=True)
 
     saved, skipped = [], []
     for f in files:
-        name = secure_filename(f.filename)
+        name = capture_name(f.filename)
         if not allowed_image(name):
             skipped.append(name)
             continue
-        path = os.path.join(img_dir, name)
+        path = os.path.join(staged_images, name)
         f.save(path)
         saved.append(path)
 
     if not saved:
-        shutil.rmtree(sess, ignore_errors=True)
+        dataset.discard(staging)
         context["error"] = ("None of the uploaded files were images (%s)."
                             % ", ".join(sorted(ALLOWED_IMAGE_EXT)))
         return render_template("module2/calibration.html", **context), 400
 
     # Same detection + fit the CLI runs -- imported, not reimplemented.
     objpoints, imgpoints, accepted, image_size, rejected = calib.detect_corners(
-        sorted(saved), pattern_size, square, debug_dir)
+        sorted(saved), pattern_size, square, staged_debug)
 
     if len(objpoints) < 3:
-        context["error"] = ("Only %d image(s) gave a %dx%d pattern; need at least 3 "
-                            "to fit. Check the pattern size and the photos."
-                            % (len(objpoints), pattern_size[0], pattern_size[1]))
+        dataset.discard(staging)
+        context["error"] = (
+            "Only %d image(s) gave a %dx%d pattern; at least 3 are needed to "
+            "fit, so nothing was changed and the previous calibration is still "
+            "loaded. Check the pattern size against the printed board."
+            % (len(objpoints), pattern_size[0], pattern_size[1]))
         context["rejected"] = [(os.path.basename(p), why) for p, why in rejected]
         return render_template("module2/calibration.html", **context), 400
 
@@ -237,30 +410,44 @@ def calibration():
         objpoints, imgpoints, image_size, None, None)
     errors = calib.per_image_errors(objpoints, imgpoints, rvecs, tvecs, K, dist)
 
-    yaml_path = os.path.join(sess, "camera_params.yaml")
-    calib.save_params(yaml_path, K, dist, image_size, pattern_size, square, rms,
-                      len(accepted), notes="fitted via the web app")
-    set_active_params(yaml_path)
+    # The fit is good: the uploaded boards become the dataset. The synthetic
+    # ground truth goes with them -- it describes the renders, not these
+    # photos, and tools/verify_pipeline.py --regen rewrites it on demand.
+    replaced = [n for n in listdir_images(BOARD_IMAGES) if dataset.is_synthetic(n)]
+    dataset.install(staged_images, BOARD_IMAGES)
+    if os.path.isdir(staged_debug):
+        dataset.install(staged_debug, BOARD_DEBUG)
+    dataset.remove(BOARD_SYNTH_TRUTH)
+    dataset.discard(staging)
 
+    calib.save_params(PARAMS, K, dist, image_size, pattern_size, square, rms,
+                      len(accepted), notes="fitted via the web app")
+    with open(BOARD_ERROR_CSV, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["image", "rms_px"])
+        for path, e in zip(accepted, errors):
+            w.writerow([os.path.basename(path), "%.6f" % e])
+
+    fitted = load_params(PARAMS)
     order = list(np.argsort(errors))
-    fitted = load_params(yaml_path)
     context.update({
         "cam": fitted,
         "cam_error": None,
-        "params_path": os.path.relpath(yaml_path, REPO_ROOT),
+        "params_exist": True,
+        "board_images": listdir_images(BOARD_IMAGES),
+        "overlays": listdir_images(BOARD_DEBUG)[:12],
+        "synthetic": False,
         "result": {
-            "token": token,
             "rms": float(rms),
             "accepted": len(accepted),
             "uploaded": len(saved),
             "image_size": image_size,
             "skipped": skipped,
+            "replaced": replaced,
             "rejected": [(os.path.basename(p), why) for p, why in rejected],
             "errors": [(os.path.basename(accepted[i]), float(errors[i]))
                        for i in order],
             "mean_error": float(np.mean(errors)),
-            "debug_images": sorted(os.listdir(debug_dir))[:12]
-            if os.path.isdir(debug_dir) else [],
             "checks": [
                 ("15+ images accepted", len(accepted) >= 15),
                 ("RMS below 0.5 px", rms < 0.5),
@@ -273,123 +460,133 @@ def calibration():
     return render_template("module2/calibration.html", **context)
 
 
-@bp.route("/calibration/download/<token>")
-def download_params(token):
-    _, sess = session_dir(token, create=False)
-    path = os.path.join(sess, "camera_params.yaml")
-    if not os.path.exists(path):
+@bp.route("/params.yaml")
+def download_params():
+    if not os.path.exists(PARAMS):
         abort(404)
-    return send_file(path, as_attachment=True, download_name="camera_params.yaml")
+    return send_file(PARAMS, as_attachment=True,
+                     download_name="camera_params.yaml")
 
 
-@bp.route("/calibration/debug/<token>/<path:name>")
-def calibration_debug_image(token, name):
-    _, sess = session_dir(token, create=False)
-    return send_from_directory(os.path.join(sess, "debug"), name)
-
-
-@bp.route("/calibration/existing-debug/<path:name>")
-def existing_debug_image(name):
-    return send_from_directory(CALIB_DEBUG_DIR, name)
-
-
-@bp.route("/calibration/use-default", methods=["POST"])
-def use_default_params():
-    """Fall back to the calibration produced by the CLI."""
-    set_active_params(DEFAULT_PARAMS)
-    return redirect(url_for(".calibration"))
+@bp.route("/overlay/<path:name>")
+def overlay_image(name):
+    return send_from_directory(BOARD_DEBUG, safe_name(name))
 
 
 # --------------------------------------------------------------------------
-# Step 2 -- measurement
+# Measure
 # --------------------------------------------------------------------------
-@bp.route("/measurement", methods=["GET", "POST"])
-def measurement():
+def measure_context():
     cam, err = camera_or_none()
-    samples = sorted(os.listdir(SAMPLE_MEAS_DIR))[:8] if os.path.isdir(
-        SAMPLE_MEAS_DIR) else []
-    context = {
+    images = listdir_images(MEAS_IMAGES)
+    return {
         "cam": cam, "cam_error": err,
-        "params_path": os.path.relpath(active_params_path(), REPO_ROOT),
-        "samples": samples,
-        "image_url": None, "token": None,
-        "nat_w": None, "nat_h": None,
+        "params_path": os.path.relpath(PARAMS, REPO_ROOT),
+        "images": images,
+        "synthetic": any(dataset.is_synthetic(n) for n in images),
+        "dimensions": DIMENSIONS,
+        "image_name": None, "nat_w": None, "nat_h": None,
+        "z_default": "2400", "allow_scaling": False,
+        "record_count": len(read_records()),
     }
-    if request.method == "GET":
-        return render_template("module2/measurement.html", **context)
 
-    if cam is None:
-        context["error"] = "Calibrate first: no camera parameters are loaded."
-        return render_template("module2/measurement.html", **context), 400
 
-    sample = request.form.get("sample")
-    token, sess = session_dir()
-    if sample:
-        name = secure_filename(sample)
-        src = os.path.join(SAMPLE_MEAS_DIR, name)
-        if not os.path.exists(src):
-            abort(404)
-        dest = os.path.join(sess, name)
-        shutil.copyfile(src, dest)
-    else:
+@bp.route("/measure", methods=["GET", "POST"])
+def measure():
+    context = measure_context()
+
+    if request.method == "POST":
+        # Post/redirect/get: refreshing the page after an upload must not
+        # re-upload the photo, and the loaded image stays linkable.
+        scaling = bool(request.form.get("allow_scaling"))
+        Z = request.form.get("Z", "2400")
+
+        # A chosen file wins over the dropdown. The dropdown keeps the loaded
+        # photo selected, so checking it first would silently ignore the new
+        # upload of anyone who measures two photos in a row.
         f = request.files.get("image")
-        if not f or not f.filename:
-            context["error"] = "No image selected."
-            return render_template("module2/measurement.html", **context), 400
-        name = secure_filename(f.filename)
-        if not allowed_image(name):
-            context["error"] = "Not an image file."
-            return render_template("module2/measurement.html", **context), 400
-        dest = os.path.join(sess, name)
-        f.save(dest)
+        if f and f.filename:
+            name = capture_name(f.filename)
+            if not allowed_image(name):
+                context["error"] = "Not an image file."
+                return render_template("module2/measure.html", **context), 400
+            # A real photo has landed: the rendered stand-ins go for good.
+            removed = adopt_real_measurements()
+            os.makedirs(MEAS_IMAGES, exist_ok=True)
+            f.save(os.path.join(MEAS_IMAGES, name))
+            return redirect(url_for(".measure", image=name, Z=Z,
+                                    scale=1 if scaling else None,
+                                    purged=len(removed) or None))
 
-    img = cv2.imread(dest, cv2.IMREAD_COLOR)
+        name = request.form.get("existing")
+        if not name:
+            context["error"] = "No image selected."
+            return render_template("module2/measure.html", **context), 400
+        return redirect(url_for(".measure", image=safe_name(name), Z=Z,
+                                scale=1 if scaling else None))
+
+    context["z_default"] = request.args.get("Z") or "2400"
+    context["allow_scaling"] = bool(request.args.get("scale"))
+    context["recorded"] = request.args.get("recorded")
+    context["purged"] = request.args.get("purged")
+
+    name = request.args.get("image")
+    if not name:
+        return render_template("module2/measure.html", **context)
+
+    name = safe_name(name)
+    path = os.path.join(MEAS_IMAGES, name)
+    if not os.path.exists(path):
+        context["error"] = "%s is no longer on disk." % name
+        return render_template("module2/measure.html", **context), 404
+
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
     if img is None:
-        context["error"] = "Could not decode that image."
-        return render_template("module2/measurement.html", **context), 400
+        context["error"] = "Could not decode %s." % name
+        return render_template("module2/measure.html", **context), 400
     nat_h, nat_w = img.shape[:2]
 
-    warning = None
-    try:
-        _, warning = check_resolution(cam, (nat_w, nat_h),
-                                      allow_scaling=bool(request.form.get("allow_scaling")))
-        res_error = None
-    except CalibrationError as exc:
-        res_error = str(exc)
+    warning, res_error = None, None
+    if context["cam"] is not None:
+        try:
+            _, warning = check_resolution(
+                context["cam"], (nat_w, nat_h),
+                allow_scaling=context["allow_scaling"])
+        except CalibrationError as exc:
+            res_error = str(exc)
 
     context.update({
-        "image_url": url_for(".uploaded_image", token=token, name=os.path.basename(dest)),
-        "image_name": os.path.basename(dest),
-        "token": token,
+        "image_name": name,
+        "image_url": url_for(".measurement_image", name=name),
         "nat_w": nat_w, "nat_h": nat_h,
         "resolution_warning": warning,
         "resolution_error": res_error,
-        "z_default": request.form.get("Z", "2400"),
-        "allow_scaling": bool(request.form.get("allow_scaling")),
     })
-    return render_template("module2/measurement.html", **context)
+    return render_template("module2/measure.html", **context)
 
 
-@bp.route("/uploads/<token>/<path:name>")
-def uploaded_image(token, name):
-    _, sess = session_dir(token, create=False)
-    return send_from_directory(sess, name)
+@bp.route("/photo/<path:name>")
+def measurement_image(name):
+    return send_from_directory(MEAS_IMAGES, safe_name(name))
+
+
+@bp.route("/preview/<path:name>")
+def preview_image(name):
+    return send_from_directory(PREVIEW, safe_name(name))
 
 
 @bp.route("/api/measure", methods=["POST"])
 def api_measure():
     """Two display-space clicks + Z -> real-world dimensions.
 
-    The browser sends display AND natural dimensions; the conversion to
-    full-resolution image coordinates happens here, server-side.
+    The browser sends the canvas size; the conversion to full-resolution image
+    coordinates happens here, against the server's own read of the file.
     """
     data = request.get_json(silent=True) or {}
     try:
-        token = str(data["token"])
-        name = secure_filename(str(data["image_name"]))
+        name = safe_name(data["image_name"])
         Z = float(data["Z"])
         disp_w, disp_h = float(data["disp_w"]), float(data["disp_h"])
-        nat_w, nat_h = float(data["nat_w"]), float(data["nat_h"])
         p1_disp = (float(data["x1"]), float(data["y1"]))
         p2_disp = (float(data["x2"]), float(data["y2"]))
     except (KeyError, TypeError, ValueError):
@@ -399,8 +596,7 @@ def api_measure():
     if cam is None:
         return jsonify({"error": err}), 400
 
-    _, sess = session_dir(token, create=False)
-    path = os.path.join(sess, name)
+    path = os.path.join(MEAS_IMAGES, name)
     if not os.path.exists(path):
         return jsonify({"error": "image not found; re-upload it"}), 404
 
@@ -411,86 +607,226 @@ def api_measure():
 
     try:
         cam_i, warning = check_resolution(
-            cam, (real_w, real_h), allow_scaling=bool(data.get("allow_scaling")))
+            cam, (real_w, real_h),
+            allow_scaling=bool(data.get("allow_scaling")))
     except CalibrationError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    # Display -> full resolution. Trust the server's own read of the file for
-    # the natural size, not the client's claim about it.
     try:
         p1 = scale_click(p1_disp[0], p1_disp[1], disp_w, disp_h, real_w, real_h)
         p2 = scale_click(p2_disp[0], p2_disp[1], disp_w, disp_h, real_w, real_h)
+        result = measure_span(p1, p2, Z, cam_i)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    try:
-        result = measure(p1, p2, Z, cam_i)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    unc = measure_uncertainty(result, cam_i)
-    annot_name = os.path.splitext(name)[0] + "_annotated.jpg"
-    cv2.imwrite(os.path.join(sess, annot_name),
-                annotate(img, p1, p2, result), [cv2.IMWRITE_JPEG_QUALITY, 90])
+    os.makedirs(PREVIEW, exist_ok=True)
+    annot = os.path.splitext(name)[0] + "_preview.jpg"
+    cv2.imwrite(os.path.join(PREVIEW, annot), annotate(img, p1, p2, result),
+                [cv2.IMWRITE_JPEG_QUALITY, 88])
 
     return jsonify({
         "result": result,
-        "uncertainty": unc,
+        "uncertainty": measure_uncertainty(result, cam_i),
         "warning": warning,
-        "client_natural": [nat_w, nat_h],
-        "server_natural": [real_w, real_h],
-        "annotated_url": url_for(".uploaded_image", token=token, name=annot_name),
+        "annotated_url": url_for(".preview_image", name=annot),
     })
 
 
 # --------------------------------------------------------------------------
-# Step 3 -- validation
+# Records
 # --------------------------------------------------------------------------
-@bp.route("/validation", methods=["GET", "POST"])
-def validation():
-    context = {"csv_path": os.path.relpath(DEFAULT_CSV, REPO_ROOT), "plots": []}
+@bp.route("/records/add", methods=["POST"])
+def record_add():
+    """Append one measurement to the CSV and write its report figure.
 
-    rows = None
+    measured_mm is recomputed here from the posted pixel coordinates rather
+    than taken from the browser, so the CSV is always consistent with the
+    calibration and with geometry.py.
+    """
+    form = request.form
+    try:
+        name = safe_name(form["image_file"])
+        Z = float(form["Z_mm"])
+        ground_truth = float(form["ground_truth_mm"])
+        dimension = form["dimension"]
+        p1 = (float(form["u1"]), float(form["v1"]))
+        p2 = (float(form["u2"]), float(form["v2"]))
+    except (KeyError, TypeError, ValueError):
+        abort(400, "the record form was incomplete")
+
+    obj = (form.get("object") or "").strip()
+    if not obj:
+        abort(400, "name the object being measured")
+    if dimension not in MEASURED_KEY:
+        abort(400, "dimension must be one of W, H, D")
+    if ground_truth <= 0:
+        abort(400, "the ruler ground truth must be positive")
+
+    cam, err = camera_or_none()
+    if cam is None:
+        abort(400, err)
+
+    path = os.path.join(MEAS_IMAGES, name)
+    if not os.path.exists(path):
+        abort(404)
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    if img is None:
+        abort(400, "could not decode %s" % name)
+    real_h, real_w = img.shape[:2]
+    try:
+        cam_i, _ = check_resolution(
+            cam, (real_w, real_h),
+            allow_scaling=bool(form.get("allow_scaling")))
+        result = measure_span(p1, p2, Z, cam_i)
+    except (CalibrationError, ValueError) as exc:
+        abort(400, str(exc))
+
+    rows = read_records()
+    row = {
+        "id": next_record_id(rows),
+        "image_file": name,
+        "object": obj,
+        "dimension": dimension,
+        "Z_mm": "%.1f" % Z,
+        "ground_truth_mm": "%.2f" % ground_truth,
+        "measured_mm": "%.2f" % result[MEASURED_KEY[dimension]],
+        "u1": "%.2f" % p1[0], "v1": "%.2f" % p1[1],
+        "u2": "%.2f" % p2[0], "v2": "%.2f" % p2[1],
+    }
+    write_report_figure(row, path, p1, p2, result)
+    rows.append(row)
+    write_records(rows)
+    refresh_outputs(rows)
+
+    return redirect(url_for(".measure", image=name, Z=form["Z_mm"],
+                            scale=1 if form.get("allow_scaling") else None,
+                            recorded=row["id"]))
+
+
+@bp.route("/records/delete", methods=["POST"])
+def record_delete():
+    rows = read_records()
+    target = str(request.form.get("id", "")).strip()
+    keep = [r for r in rows if str(r.get("id")) != target]
+    if len(keep) == len(rows):
+        abort(404)
+    gone = [r for r in rows if str(r.get("id")) == target]
+    for r in gone:
+        try:
+            dataset.remove(os.path.join(FIGURES, figure_name(r)))
+        except (KeyError, ValueError):
+            pass
+    write_records(keep)
+    refresh_outputs(keep)
+    return redirect(url_for(".records", deleted=target))
+
+
+@bp.route("/records/csv")
+def records_csv():
+    if not os.path.exists(RECORDS_CSV):
+        abort(404)
+    return send_file(RECORDS_CSV, as_attachment=True,
+                     download_name="measurements.csv")
+
+
+@bp.route("/records/figures.zip")
+def figures_zip():
+    names = listdir_images(FIGURES)
+    if not names:
+        abort(404)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in names:
+            zf.write(os.path.join(FIGURES, name), arcname=name)
+        if os.path.exists(STATS_TXT):
+            zf.write(STATS_TXT, arcname="statistics.txt")
+        if os.path.exists(RECORDS_CSV):
+            zf.write(RECORDS_CSV, arcname="measurements.csv")
+        for plot in PLOT_NAMES:
+            path = os.path.join(VAL_OUTPUT, plot)
+            if os.path.exists(path):
+                zf.write(path, arcname=plot)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name="module2_report_figures.zip")
+
+
+@bp.route("/records/figure/<path:name>")
+def report_figure(name):
+    return send_from_directory(FIGURES, safe_name(name))
+
+
+@bp.route("/records/plot/<path:name>")
+def validation_plot(name):
+    return send_from_directory(VAL_OUTPUT, safe_name(name))
+
+
+@bp.route("/records", methods=["GET", "POST"])
+def records():
+    context = {
+        "csv_path": os.path.relpath(RECORDS_CSV, REPO_ROOT),
+        "plots": [], "figures": [], "deleted": request.args.get("deleted"),
+    }
+
     if request.method == "POST":
+        # Replacing the log from a CSV is itself real data arriving, so the
+        # synthetic measurement dataset goes with it.
         f = request.files.get("csv")
         if not f or not f.filename:
             context["error"] = "No CSV selected."
-            return render_template("module2/validation.html", **context), 400
+            return render_template("module2/records.html", **context), 400
         try:
             text = f.read().decode("utf-8-sig")
-            rows = list(csv.DictReader(io.StringIO(text)))
+            uploaded = list(csv.DictReader(io.StringIO(text)))
         except (UnicodeDecodeError, csv.Error) as exc:
             context["error"] = "Could not parse that CSV: %s" % exc
-            return render_template("module2/validation.html", **context), 400
-        context["csv_path"] = secure_filename(f.filename)
-    elif os.path.exists(DEFAULT_CSV):
-        with open(DEFAULT_CSV, newline="") as fh:
-            rows = list(csv.DictReader(fh))
+            return render_template("module2/records.html", **context), 400
+        missing = [c for c in analyze.REQUIRED
+                   if not uploaded or c not in uploaded[0]]
+        if missing:
+            context["error"] = ("CSV is missing column(s): %s"
+                                % ", ".join(missing))
+            return render_template("module2/records.html", **context), 400
+        adopt_real_measurements()
+        write_records(uploaded)
+        refresh_outputs(uploaded)
+        return redirect(url_for(".records"))
+
+    rows = read_records()
+    context["synthetic"] = synthetic_records(rows)
 
     if not rows:
-        context["error"] = ("No measurements found. Log 20 rows in %s, or generate "
-                            "the synthetic stand-in with tools/make_synthetic_data.py "
-                            "and tools/simulate_measurements.py."
-                            % os.path.relpath(DEFAULT_CSV, REPO_ROOT))
-        return render_template("module2/validation.html", **context)
+        context["empty"] = True
+        return render_template("module2/records.html", **context)
 
     missing = [c for c in analyze.REQUIRED if c not in rows[0]]
     if missing:
         context["error"] = "CSV is missing column(s): %s" % ", ".join(missing)
-        return render_template("module2/validation.html", **context), 400
+        return render_template("module2/records.html", **context), 400
 
     try:
         gt, meas, Z, err, pct, stats = analyze.compute(rows)
     except (ValueError, KeyError) as exc:
         context["error"] = "Could not compute statistics: %s" % exc
-        return render_template("module2/validation.html", **context), 400
+        return render_template("module2/records.html", **context), 400
+
+    figures = {}
+    for r in rows:
+        try:
+            name = figure_name(r)
+        except (KeyError, ValueError):
+            continue
+        if os.path.exists(os.path.join(FIGURES, name)):
+            figures[str(r["id"])] = name
 
     table = []
     for i, r in enumerate(rows):
         table.append({
             "id": r["id"], "object": r["object"], "dimension": r["dimension"],
+            "image_file": r.get("image_file", ""),
             "Z": Z[i], "gt": gt[i], "meas": meas[i],
             "err": err[i], "pct": pct[i],
+            "figure": figures.get(str(r["id"])),
         })
 
     by_dim = []
@@ -503,26 +839,30 @@ def validation():
             "mape": float(np.abs(p).mean()),
         })
 
-    plots = [p for p in ("error_vs_size.png", "error_vs_Z.png",
-                         "error_distribution.png")
-             if os.path.exists(os.path.join(VALIDATION_OUTPUT, p))]
+    # corrcoef is nan when a column has no spread -- every shot at one Z, or
+    # one repeated object size. That is a normal way to run the experiment, so
+    # the row is dropped rather than printed as "nan".
+    trends = [
+        (label, stats[key], note) for key, label, note in (
+            ("corr_err_vs_gt", "corr(ground-truth size, signed error)",
+             "Strong ⇒ error grows with size: a scale error in f_x or Z, "
+             "not click precision."),
+            ("corr_pct_vs_Z", "corr(Z, percent error)",
+             "A trend implicates Z: a fixed origin offset dZ gives a percent "
+             "error dZ/Z that shrinks with distance."))
+        if isinstance(stats.get(key), float) and math.isfinite(stats[key])
+    ]
 
     context.update({
-        "rows": table, "stats": stats, "by_dim": by_dim, "plots": plots,
+        "rows": table, "stats": stats, "by_dim": by_dim, "trends": trends,
         "worst": rows[stats["max_abs_error_idx"]],
+        "figures": [f for f in (r["figure"] for r in table) if f],
+        "plots": [p for p in PLOT_NAMES
+                  if os.path.exists(os.path.join(VAL_OUTPUT, p))],
         "report_text": analyze.report(rows, gt, meas, Z, err, pct, stats),
+        "stale_calibration": (os.path.exists(PARAMS) and
+                              os.path.exists(RECORDS_CSV) and
+                              os.path.getmtime(PARAMS) >
+                              os.path.getmtime(RECORDS_CSV)),
     })
-    return render_template("module2/validation.html", **context)
-
-
-@bp.route("/validation/plot/<path:name>")
-def validation_plot(name):
-    return send_from_directory(VALIDATION_OUTPUT, name)
-
-
-# --------------------------------------------------------------------------
-# Part D -- theory
-# --------------------------------------------------------------------------
-@bp.route("/theory")
-def theory():
-    return render_template("module2/theory.html")
+    return render_template("module2/records.html", **context)
