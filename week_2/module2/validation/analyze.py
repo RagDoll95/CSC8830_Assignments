@@ -30,12 +30,10 @@ OUTPUTS
     validation/output/error_vs_Z.png        error vs. distance
     validation/output/measurements_with_errors.csv
 
-HOW TO READ IT
-    A nonzero MEAN SIGNED ERROR is not noise -- it is bias, and the usual
-    cause is the Z reference origin (tape measured from the phone's back
-    glass rather than the optical centre inside the lens stack) or a residual
-    focal-length error. The STD is the random part, and it should track the
-    error-propagation prediction in geometry.measure_uncertainty.
+NOTE
+    This module reports numbers only. The interpretation of the bias and the
+    spread lives in the writeup, so the statistics cannot drift from the prose
+    describing them.
 """
 
 import argparse
@@ -51,15 +49,18 @@ DEFAULT_OUT_DIR = "validation/output"
 REQUIRED = ["id", "image_file", "object", "dimension", "Z_mm",
             "ground_truth_mm", "measured_mm"]
 
+# Which component of a measurement each CSV dimension code refers to. Must
+# match app/modules/module2.py, which writes measured_mm at record time.
+MEASURED_KEY = {"W": "width_mm", "H": "height_mm", "D": "length_mm"}
+
 
 def read_csv(path):
     if not os.path.exists(path):
         raise SystemExit(
             "ERROR: %s not found.\n"
-            "Log your 20 measurements there (schema in this file's docstring),\n"
-            "or generate the synthetic stand-in:\n"
-            "  python tools/make_synthetic_data.py --only measure\n"
-            "  python tools/simulate_measurements.py" % path)
+            "Log your measurements there (schema in this file's docstring), or\n"
+            "record them on the Measure page of the web app, which writes it."
+            % path)
 
     with open(path, newline="") as fh:
         rows = list(csv.DictReader(fh))
@@ -91,7 +92,11 @@ def recompute(rows, params_path):
         res = measure((float(r["u1"]), float(r["v1"])),
                       (float(r["u2"]), float(r["v2"])),
                       float(r["Z_mm"]), cam)
-        r["measured_mm"] = "%.4f" % res["length_mm"]
+        # A row logged as W or H recorded that component, not the diagonal.
+        # Re-deriving every row from length_mm silently rewrites those rows
+        # into a different quantity than the one measured against the ruler.
+        r["measured_mm"] = "%.4f" % res[MEASURED_KEY.get(
+            str(r.get("dimension", "")).strip().upper(), "length_mm")]
     return rows
 
 
@@ -163,9 +168,9 @@ def report(rows, gt, meas, Z, err, pct, stats):
     w("  distance range               Z    : %.0f .. %.0f mm\n"
       % (stats["Z_min_mm"], stats["Z_max_mm"]))
     w("\n")
-    w("  mean signed error                 : %+8.3f mm   <- systematic bias\n"
+    w("  mean signed error                 : %+8.3f mm\n"
       % stats["mean_signed_error_mm"])
-    w("  std deviation of error            : %8.3f mm   <- random spread\n"
+    w("  std deviation of error            : %8.3f mm\n"
       % stats["std_error_mm"])
     w("  mean absolute error         MAE   : %8.3f mm\n" % stats["mae_mm"])
     w("  root-mean-square error      RMSE  : %8.3f mm\n" % stats["rmse_mm"])
@@ -190,14 +195,8 @@ def report(rows, gt, meas, Z, err, pct, stats):
         w("  standard error of the mean        : %8.3f mm\n" % stats["sem_mm"])
         w("  95%% CI on the mean signed error   : [%+.3f, %+.3f] mm\n"
           % stats["ci95_mm"])
-        if stats["bias_significant"]:
-            w("  -> the CI excludes zero: the bias is REAL, not sampling noise.\n")
-            w("     Attribute it. The leading candidate is the Z reference origin\n")
-            w("     (a tape measure starts at the back glass, while Z is defined\n")
-            w("     from the optical centre inside the lens stack); a residual\n")
-            w("     focal-length error from Step 1 is the other candidate.\n")
-        else:
-            w("  -> the CI contains zero: no statistically significant bias.\n")
+        w("  CI excludes zero                  : %s\n"
+          % ("yes" if stats["bias_significant"] else "no"))
 
     if "corr_err_vs_gt" in stats:
         w("\n")
@@ -205,11 +204,7 @@ def report(rows, gt, meas, Z, err, pct, stats):
         w("TREND DIAGNOSTICS\n")
         w("-" * 96 + "\n")
         w("  corr(ground-truth size, signed error)  : %+.3f\n" % stats["corr_err_vs_gt"])
-        w("     A strong positive value means error grows in proportion to size,\n")
-        w("     i.e. a SCALE error -- focal length or Z, not click precision.\n")
         w("  corr(Z, percent error)                 : %+.3f\n" % stats["corr_pct_vs_Z"])
-        w("     A trend here implicates the Z measurement itself: a fixed origin\n")
-        w("     offset dZ produces a percent error dZ/Z that shrinks with distance.\n")
 
     w("\n")
     w("-" * 96 + "\n")
@@ -226,14 +221,10 @@ def report(rows, gt, meas, Z, err, pct, stats):
 
     w("\n")
     w("-" * 96 + "\n")
-    w("ERROR PROPAGATION CHECK (plan section 12)\n")
+    w("ERROR PROPAGATION\n")
     w("-" * 96 + "\n")
-    w("  W = du * Z / f_x, so relative errors add:\n")
-    w("      dW/W  ~=  d(du)/du  +  dZ/Z  +  df_x/f_x\n")
+    w("  W = du * Z / f_x   =>   dW/W ~= d(du)/du + dZ/Z + df_x/f_x\n")
     w("  Observed spread of percent error : %.3f %%\n" % stats["std_pct"])
-    w("  The click-precision term shrinks as the pixel span grows, which is why\n")
-    w("  larger objects measure proportionally better -- visible in the size\n")
-    w("  breakdown above and in error_vs_size.png.\n")
     w("=" * 96 + "\n")
     return out.getvalue()
 

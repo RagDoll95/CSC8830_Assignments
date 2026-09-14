@@ -233,7 +233,7 @@ def main(argv=None):
     if not paths:
         print("ERROR: no images matched %r.\n"
               "       Put 15-20 checkerboard photos in calibration/data/images/,\n"
-              "       or generate a synthetic set:  python tools/make_synthetic_data.py"
+              "       or upload them on the Calibration page of the web app."
               % args.images, file=sys.stderr)
         return 2
 

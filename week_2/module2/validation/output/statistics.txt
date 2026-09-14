@@ -1,5 +1,5 @@
 ================================================================================================
-STEP 3 -- VALIDATION OVER 19 MEASUREMENTS
+STEP 3 -- VALIDATION OVER 20 MEASUREMENTS
 ================================================================================================
 
   id  object             dim     Z (mm)  truth (mm)   meas (mm)  err (mm)  err (%)
@@ -7,6 +7,7 @@ STEP 3 -- VALIDATION OVER 19 MEASUREMENTS
   1   Mac                D       1000.0      356.00      317.70    -38.30   -10.76
   2   Paperback book     D       2000.0      210.00      198.67    -11.33    -5.40
   3   Water bottle       D       2000.0      277.00      259.85    -17.15    -6.19
+  4   Hydroflask         D       2000.0      130.00      168.79    +38.79   +29.84
   5   Headphone case     W       2000.0      150.00      149.38     -0.62    -0.41
   7   Game controller    D       2000.0      150.00      120.89    -29.11   -19.41
   8   clothes hangar     D       2000.0      413.00      360.33    -52.67   -12.75
@@ -27,55 +28,43 @@ STEP 3 -- VALIDATION OVER 19 MEASUREMENTS
 ------------------------------------------------------------------------------------------------
 ERROR STATISTICS
 ------------------------------------------------------------------------------------------------
-  measurements                n     : 19
+  measurements                n     : 20
   ground-truth size range           : 77.0 .. 413.0 mm
   distance range               Z    : 1000 .. 2000 mm
 
-  mean signed error                 :  -22.711 mm   <- systematic bias
-  std deviation of error            :   14.798 mm   <- random spread
-  mean absolute error         MAE   :   22.711 mm
-  root-mean-square error      RMSE  :   26.893 mm
+  mean signed error                 :  -19.636 mm
+  std deviation of error            :   19.914 mm
+  mean absolute error         MAE   :   23.515 mm
+  root-mean-square error      RMSE  :   27.610 mm
 
-  mean signed percent error         :   -9.750 %
-  mean absolute percent error MAPE  :    9.750 %
-  std deviation of percent error    :    4.663 %
+  mean signed percent error         :   -7.771 %
+  mean absolute percent error MAPE  :   10.755 %
+  std deviation of percent error    :    9.948 %
 
   most negative error               :  -52.670 mm  (id 8, clothes hangar D)
-  most positive error               :   -0.620 mm  (id 5, Headphone case W)
+  most positive error               :  +38.790 mm  (id 4, Hydroflask D)
   largest absolute error            :  -52.670 mm  (id 8, clothes hangar D)
 
-  standard error of the mean        :    3.395 mm
-  95% CI on the mean signed error   : [-29.365, -16.057] mm
-  -> the CI excludes zero: the bias is REAL, not sampling noise.
-     Attribute it. The leading candidate is the Z reference origin
-     (a tape measure starts at the back glass, while Z is defined
-     from the optical centre inside the lens stack); a residual
-     focal-length error from Step 1 is the other candidate.
+  standard error of the mean        :    4.453 mm
+  95% CI on the mean signed error   : [-28.364, -10.908] mm
+  CI excludes zero                  : yes
 
 ------------------------------------------------------------------------------------------------
 TREND DIAGNOSTICS
 ------------------------------------------------------------------------------------------------
-  corr(ground-truth size, signed error)  : -0.799
-     A strong positive value means error grows in proportion to size,
-     i.e. a SCALE error -- focal length or Z, not click precision.
-  corr(Z, percent error)                 : +0.052
-     A trend here implicates the Z measurement itself: a fixed origin
-     offset dZ produces a percent error dZ/Z that shrinks with distance.
+  corr(ground-truth size, signed error)  : -0.721
+  corr(Z, percent error)                 : +0.071
 
 ------------------------------------------------------------------------------------------------
 PER-DIMENSION BREAKDOWN
 ------------------------------------------------------------------------------------------------
   dimension        n  mean err mm   std err mm     MAPE %
-  D               14      -24.372       14.600     10.276
+  D               15      -20.161       21.538     11.580
   W                5      -18.060       15.998      8.278
 
 ------------------------------------------------------------------------------------------------
-ERROR PROPAGATION CHECK (plan section 12)
+ERROR PROPAGATION
 ------------------------------------------------------------------------------------------------
-  W = du * Z / f_x, so relative errors add:
-      dW/W  ~=  d(du)/du  +  dZ/Z  +  df_x/f_x
-  Observed spread of percent error : 4.663 %
-  The click-precision term shrinks as the pixel span grows, which is why
-  larger objects measure proportionally better -- visible in the size
-  breakdown above and in error_vs_size.png.
+  W = du * Z / f_x   =>   dW/W ~= d(du)/du + dZ/Z + df_x/f_x
+  Observed spread of percent error : 9.948 %
 ================================================================================================

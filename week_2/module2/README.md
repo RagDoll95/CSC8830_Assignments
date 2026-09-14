@@ -9,32 +9,18 @@ reaches all four parts from one page.
 
 ---
 
-## ⚠️ Read this first: the data in this repo is SYNTHETIC
+## The data here is real
 
-Every image and CSV currently committed is named `synthetic_*` and was **rendered** by
-`tools/make_synthetic_data.py`, not photographed. It exists for one reason: because the
-ground-truth `K`, distortion coefficients, and object sizes are known exactly, the code
-can be **scored** rather than merely run.
+The experiment has been run. `calibration/output/camera_params.yaml` was fitted from 24
+checkerboard photos of an actual phone camera at 3024×4032, and
+`validation/data/measurements.csv` holds 20 measurements of real objects against ruler
+ground truth. The rendered `synthetic_*` stand-in set that this repo used to ship — and
+the tools that generated and scored it — were removed once real captures replaced them;
+they are in git history if ever needed.
 
-| What the synthetic data proves | What it does not do |
-|---|---|
-| `calibrate.py` recovers `f_x` to within **0.013%** of the true value | Satisfy the assignment |
-| The measurement pipeline is exact to **0.01%** with no capture noise | Count as 20 real measurements |
-| The guards, the CLI, and the web app all agree | Substitute for your own camera's `K` |
-
-**Before submitting you must replace it with your own captures.** The three places to
-swap, and nothing else changes:
-
-1. `calibration/data/images/` — your 15–20 checkerboard photos
-2. `validation/data/images/` — your 20 measurement photos
-3. `validation/data/measurements.csv` — your 20 logged rows with ruler ground truth
-
-Then delete the synthetic files and re-run the commands in
-[Running the pipeline](#running-the-pipeline).
-
-> **→ [`NEXT_STEPS.md`](NEXT_STEPS.md) is the run sheet for doing exactly that.** It walks
-> the capture protocol, the 20-measurement procedure, the analysis, the screen recording,
-> and the PDF, with a troubleshooting table for when the numbers look wrong. Start there.
+The write-up of Steps 1–3, including the error attribution, is
+**[`report/report.tex`](report/report.tex)**. Numbers quoted below are regenerated from
+the committed CSV by `validation/analyze.py`.
 
 ---
 
@@ -74,11 +60,11 @@ URLs:
 | Page | Part | What it does |
 |---|---|---|
 | `/` | — | Home: every assignment in the repository |
-| `/module-2/` | — | Overview, loaded camera, CLI equivalents |
-| `/module-2/calibration` | A · Step 1 | Upload board images → fit `K` and distortion → per-image error table → corner overlays → download `camera_params.yaml` |
-| `/module-2/measurement` | B · Step 2 | Upload an image, enter `Z`, click two points → width/height/diagonal + error budget + annotated image |
-| `/module-2/validation` | C · Step 3 | Measurement table, full error statistics, diagnostic plots |
-| `/module-2/theory` | D | The two-camera derivation |
+| `/module-2/` | A · Step 1 | Calibration: upload board images → fit `K` and distortion → per-image error table → corner overlays → download `camera_params.yaml` |
+| `/module-2/measure` | B · Step 2 | Upload an image, enter `Z`, click two points → width/height/diagonal + error budget + annotated image |
+| `/module-2/records` | C · Step 3 | Measurement table, error statistics, diagnostic plots, report figures `.zip` |
+
+Part D is written rather than interactive: [`theory/two_camera_derivation.md`](theory/two_camera_derivation.md).
 
 ---
 
@@ -114,9 +100,8 @@ Outputs: `calibration/output/camera_params.yaml`,
 python measurement/geometry.py
 
 # Validate the WHOLE pipeline against the board, whose square size is known.
-# Do this before burning 20 experimental measurements.
-python measurement/selftest_checkerboard.py \
-    --image measurement/data/synthetic_selftest_board.jpg --Z 1000
+# Photograph the board fronto-parallel at a tape-measured distance, then:
+python measurement/selftest_checkerboard.py --image board_at_1m.jpg --Z 1000
 
 # Interactive: click two points (r = reset, s = save, q = quit).
 python measurement/measure_cli.py --image PHOTO.jpg --Z 2400
@@ -145,25 +130,20 @@ python validation/analyze.py --recompute
 Outputs: `validation/output/statistics.txt`, `error_vs_size.png`, `error_vs_Z.png`,
 `error_distribution.png`, `measurements_with_errors.csv`.
 
-### Verify everything
+### Verify a change
+
+The synthetic-scoring suite is gone: it compared the calibration against rendered ground
+truth, which stopped meaning anything once the real captures replaced it. Two checks
+remain, and both matter after touching anything numeric.
 
 ```bash
-python tools/verify_pipeline.py
+python measurement/geometry.py             # pure geometry + every guard, no data needed
+python validation/analyze.py --recompute   # re-derive every logged row from its pixels
 ```
 
-Scores all 25 checks against the synthetic ground truth — calibration accuracy, geometry,
-the board self-test, pure code error, every guard, and CLI/web-app agreement. **If this
-passes and your real measurements are still off, the problem is in the capture (Z origin,
-resolution, focus), not in the code.**
-
-### Regenerate the synthetic data
-
-```bash
-python tools/make_synthetic_data.py              # board + measurement scenes
-python tools/simulate_measurements.py            # the 20-row CSV
-python tools/simulate_measurements.py --sigma-click 0 \
-    --out validation/data/measurements_bias_only.csv   # isolate the Z bias
-```
+`--recompute` must reproduce the logged `measured_mm` to rounding (~0.005 mm). A larger
+drift means the geometry or the calibration has changed under the CSV, and the numbers in
+`report/` and on the Records page no longer agree with it.
 
 ---
 
@@ -197,8 +177,13 @@ configuration, the same coplanarity issue that makes a single view insufficient.
 
 - *Wrong origin.* A tape measure starts at the phone's back glass; the optical centre sits
   inside the lens stack, 5–10 mm away. At 2 m that is a ~0.5% systematic bias on every
-  one of the 20 samples. This repo demonstrates the effect deliberately — see
-  [Results](#results-on-the-synthetic-data).
+  sample. Worth knowing, but note that it is *not* what happened here: a fixed offset
+  produces a percent error that shrinks with distance, and the measured data shows a
+  constant proportional error instead — see [Results](#results).
+- *Wrong magnitude.* Setting `Z` once from a nominal distance and reusing it for every
+  shot produces a proportional error on all of them. This is the leading explanation for
+  the 10.3% scale deficit in [Results](#results); measure `Z` per shot and record what
+  the tape actually read.
 - *Wrong direction.* If the object sits off to the side, the straight-line distance is
   `Z/cos θ`, not `Z`. Fix: centre the object in frame for every measurement.
 - *Wrong surface.* Measure to the face being measured, not the object's front edge or base.
@@ -265,48 +250,60 @@ extrinsics, then nonlinear refinement minimises the reprojection error that
 
 ---
 
-## Results on the synthetic data
+## Results
 
-Reproduce with `python tools/verify_pipeline.py`.
+Regenerate with `python validation/analyze.py`.
 
-**Step 1 — calibration vs. known ground truth** (18 images, 2016×1512):
+**Step 1 — calibration** (24 images, 3024×4032):
 
-| Parameter | Recovered | True | Error |
-|---|---|---|---|
-| `f_x` | 1600.290 | 1600.500 | 0.013% |
-| `f_y` | 1601.076 | 1601.200 | 0.008% |
-| `c_x` | 1007.258 | 1007.300 | 0.004% |
-| `c_y` | 755.685 | 755.800 | 0.015% |
-| `k₁` | 0.08044 | 0.08000 | 0.55% |
+| Parameter | Value |
+|---|---|
+| `f_x` | 3336.69 px |
+| `f_y` | 3335.58 px |
+| `c_x` | 1496.68 px |
+| `c_y` | 2020.27 px |
+| `f_y/f_x` | 0.99967 |
+| Overall RMS reprojection error | 1.863 px |
+| Median per-image RMS | 0.581 px |
 
-RMS reprojection error **0.0582 px**; `c_x/width` = 0.4996, `c_y/height` = 0.4998,
-`f_y/f_x` = 1.00049 — consistent with the zero-skew, square-pixel assumption.
+`f_y/f_x` within 0.03% of unity and a principal point within 1% of the image centre are
+both consistent with the zero-skew, square-pixel assumption. The overall RMS is not
+representative: 20 of the 24 images sit below 1 px (median 0.533 px) and four land at
+1.22, 2.30, 3.72 and 7.48 px. Those four dominate the total and refitting without them is
+the cheapest improvement available here.
 
-**Step 2 — board self-test**, 93 adjacent 25 mm gaps at a known `Z` = 1000 mm:
-mean 24.997 mm, MAPE **0.07%**.
+**Step 3 — validation**, 20 measurements, 77–413 mm, `Z` = 1–2 m:
 
-**Step 3 — the two error sources, separated.** The same 20 scenes, analysed twice:
+| Statistic | Value |
+|---|---|
+| Mean signed error | −19.64 mm |
+| Std deviation | 19.91 mm |
+| MAE | 23.52 mm |
+| RMSE | 27.61 mm |
+| Mean signed percent error | −7.77% |
+| MAPE | 10.76% |
+| 95% CI on the mean signed error | [−28.36, −10.91] mm |
+| `corr(size, signed error)` | −0.721 |
+| `corr(Z, percent error)` | +0.071 |
 
-| Run | Mean signed error | Std | MAPE | 95% CI on the mean |
-|---|---|---|---|---|
-| No capture noise (`--perfect`) | +0.050 mm | 0.031 mm | **0.010%** | — |
-| Click noise σ=1.5 px + Z bias −8 mm | −1.170 mm | 4.357 mm | 0.633% | [−3.08, +0.74] — **contains 0** |
-| Z bias −8 mm only (`--sigma-click 0`) | −1.504 mm | 1.157 mm | 0.288% | [−2.01, −1.00] — **excludes 0** |
+The CI excludes zero, so the bias is real rather than sampling noise. It is
+**multiplicative, not additive**: fitting one through-origin scale factor to the
+consistent rows gives `measured = 0.8974 × truth`, and dividing that single constant out
+drops the MAPE from 9.75% to 4.02%.
 
-Reading this is the point of the exercise:
+A fixed `Z` origin offset — the usual suspect — is ruled out by the data. A fixed offset
+producing −9.75% at `Z` = 2000 mm would produce −16.32% at `Z` = 1000 mm; the `Z` = 1000
+row reads −10.76%, essentially the same. That leaves `f_x` being 10.3% high or `Z` being
+10.3% low, and the evidence favours `Z`: `f_x/W` = 1.103 is the textbook value for a phone
+main camera, and `Z` is recorded as exactly 2000.0 in 19 of 20 rows, i.e. a nominal setup
+distance rather than a per-shot measurement.
 
-- The `--perfect` row isolates **pure code error**: 0.010%, i.e. the geometry is exact and
-  the residual is just the tiny remaining calibration error.
-- The bias-only row shows the −8 mm `Z` origin offset exactly as predicted: a −0.288% mean
-  signed error (≈ 8 mm / 2.8 m average distance), a 95% CI that excludes zero, and
-  `corr(size, error)` = **−0.897** — the signature of a *scale* error rather than noise.
-- The realistic row is the honest lesson: with σ = 1.5 px of click noise, the click term
-  alone is ~1% on a 155 mm object, so it **swamps** the 0.3% bias and `analyze.py`
-  correctly reports no statistically significant bias at n = 20. A nonzero mean signed
-  error is not automatically detectable — you need either better click precision or a
-  larger sample to separate bias from spread.
+Row 4 is a ground-truth entry error, not a measurement error: the stored pixels genuinely
+mean 168.8 mm against a recorded truth of 130 mm. It is kept in every statistic above
+rather than dropped, and it alone moves the mean signed percent error from −9.75% to
+−7.77%.
 
-This is the error budget of section 12 made measurable instead of asserted.
+The full attribution, with the figures, is in [`report/report.tex`](report/report.tex).
 
 ---
 
@@ -323,7 +320,7 @@ CSC8830_Assignments/
   calibration/
     capture_check.py            pre-flight photos before fitting
     calibrate.py                Step 1: Zhang calibration -> camera_params.yaml
-    data/images/                board photos (synthetic_* are committed samples)
+    data/images/                board photos (populated by an upload)
     output/                     camera_params.yaml, error CSV, debug/ overlays
   measurement/
     geometry.py                 PURE geometry: load_params, backproject, measure
@@ -335,31 +332,27 @@ CSC8830_Assignments/
     output/                     statistics.txt, plots, annotated images
   theory/
     two_camera_derivation.md    Part D, typed, for the PDF
-  tools/
-    make_synthetic_data.py      renders the synthetic dataset
-    simulate_measurements.py    stands in for the 20 manual clicks
-    verify_pipeline.py          scores the whole pipeline (25 checks)
+  report/
+    report.tex                  the Steps 1-3 write-up
+    figures/                    the figures it includes
   requirements.txt
   README.md                     this file
-  NEXT_STEPS.md                 run sheet for capturing real data
+  NEXT_STEPS.md                 run sheet used to capture the real data
 ```
 
 **Architectural rule:** `measurement/geometry.py` has no UI dependencies — no
 `cv2.imshow`, no Flask, no argparse. `measure_cli.py` and `app/modules/module2.py` both
 import it, so
-the CLI and the web app cannot disagree; `verify_pipeline.py` asserts numerically that
-they don't. The web app also imports `calibration/calibrate.py` and
+the CLI and the web app cannot disagree. The web app also imports `calibration/calibrate.py` and
 `validation/analyze.py` directly rather than reimplementing them, so every number on a
 web page is produced by the same code the CLI runs.
 
 **The one real web gotcha, handled.** Canvas clicks arrive in *display* coordinates. A
-2016-px-wide photo shown in an 800-px canvas needs every click multiplied by 2.52 before
+3024-px-wide photo shown in an 800-px canvas needs every click multiplied by 3.78 before
 it reaches the geometry, or every measurement is wrong by that factor. The browser posts
-the natural dimensions alongside each click and `modules.module2.scale_click()` converts
-server-side,
-against the server's own read of the image rather than the client's claim about it.
-`verify_pipeline.py` measures the same object through both paths and asserts they match
-(358.04 mm via an 800-px canvas vs. 358.00 mm ground truth).
+the canvas dimensions alongside each click and `modules.module2.scale_click()` converts
+server-side, against the server's own read of the image rather than the client's claim
+about it.
 
 ---
 
@@ -367,10 +360,11 @@ against the server's own read of the image rather than the client's claim about 
 
 | Requirement | Where |
 |---|---|
-| Step 1: calibrate a smartphone camera | `calibration/calibrate.py`, `/module-2/calibration` |
-| Step 2: real-world 2D measurement from perspective projection | `measurement/geometry.py`, `/module-2/measurement` |
-| Step 3: object > 2 m, 20 measurements, error statistics | `validation/`, `/module-2/validation` |
-| Part D: two-camera derivation, typed | `theory/two_camera_derivation.md`, `/module-2/theory` |
+| Step 1: calibrate a smartphone camera | `calibration/calibrate.py`, `/module-2/` |
+| Step 2: real-world 2D measurement from perspective projection | `measurement/geometry.py`, `/module-2/measure` |
+| Step 3: object > 2 m, 20 measurements, error statistics | `validation/`, `/module-2/records` |
+| Part D: two-camera derivation, typed | `theory/two_camera_derivation.md` |
+| Write-up of Steps 1-3 | `report/report.tex` |
 | Web app reaching all assignments | `app/` at the repository root — one home page, one nav bar per assignment |
 | ReadMe documentation at the top of each script | `HOW TO RUN` block in every module docstring |
 | Error estimate statistics | `validation/output/statistics.txt` |
