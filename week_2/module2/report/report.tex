@@ -20,11 +20,6 @@
 \usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
 \usepackage{float}   % [H]: every table and figure stays where it is written
 
-% The one floating table (Table 4) should reach the top of a page rather than
-% be deferred onto a page of its own.
-\renewcommand{\topfraction}{0.85}
-\renewcommand{\floatpagefraction}{0.9}
-
 \setlength{\emergencystretch}{3em}
 
 \newcommand{\px}{\,\mathrm{px}}
@@ -46,26 +41,23 @@
 
 \noindent
 All code, captured images and logged measurements are in that repository. The
-Module 2 code is under \texttt{week\_2/module2/} (calibration, measurement,
-validation) and the web application that demonstrates it is at the repository
-root under \texttt{app/}, served by
-\texttt{week\_2/.venv/bin/python app/app.py}. The three Module 2 pages are
-\texttt{/module-2/} (calibration), \texttt{/module-2/measure} (click two points
-on a photo at a known distance) and \texttt{/module-2/records} (the logged
-measurements and error statistics). Per-script usage is documented in
-\texttt{week\_2/module2/README.md} and in the header of each script.
+Module 2 code is under \texttt{week\_2/module2/} and the web application that
+demonstrates it is at the repository root under \texttt{app/}, started with
+\texttt{week\_2/.venv/bin/python app/app.py}. Its three Module 2 pages cover
+the calibration, the measurement itself (click two points on a photo taken at
+a known distance) and the logged measurements with their error statistics.
 
-\section{Step 1 --- Camera calibration}
+\section{Step 1: Camera calibration}
 
-A smartphone camera was calibrated with OpenCV's built-in tools by Zhang's
-multi-plane method. A $9 \times 6$ inner-corner checkerboard with a measured
+A smartphone camera was calibrated with OpenCV's built-in tools by
+\href{https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr98-71.pdf}%
+{Zhang's multi-plane method}. A $9 \times 6$ inner-corner checkerboard with a measured
 square size of $24.9\mm$ was photographed 24 times in varied orientations.
-Corners were located with \texttt{cv2.findChessboardCorners} and refined to
-sub-pixel accuracy with \texttt{cv2.cornerSubPix}; the camera model was then
-fitted with \texttt{cv2.calibrateCamera}, which minimises total reprojection
-error over the intrinsics, the distortion coefficients and the per-view pose.
-Focus, exposure and zoom were locked for the whole set and every image was
-captured at one resolution --- the same resolution used in Steps 2 and 3.
+Corners were located and refined to sub-pixel accuracy, and the camera model
+was then fitted with \texttt{cv2.calibrateCamera}, which minimises total
+reprojection error over the intrinsics, the distortion coefficients and the
+per-view pose. Focus, exposure and zoom were locked for the whole set, and
+every image was captured at the one resolution later used in Steps 2 and 3.
 
 The recovered camera matrix and distortion coefficients are
 
@@ -125,13 +117,12 @@ Median per-image RMS               & $0.581\px$ \\
   \includegraphics[width=\textwidth]{figures/calib_worst.jpeg}
   \caption{\texttt{IMG\_3921}, RMS $7.475\px$.}
 \end{subfigure}
-\caption{Detected corner overlays for the best and worst of the 24 calibration
-views. Twenty of the 24 images fit below $1\px$ (median $0.533\px$); four land
-between $1.22$ and $7.48\px$ and pull the overall RMS above the median.}
+\caption{Detected corner overlays for the two of the 24 calibration
+views}
 \label{fig:overlays}
 \end{figure}
 
-\section{Step 2 --- Real-world dimensions from perspective projection}
+\section{Step 2: Real-world dimensions from perspective projection}
 
 Under the pinhole model a point $P = (X, Y, Z)$ in camera coordinates projects
 to
@@ -161,7 +152,7 @@ L = \lVert P_2 - P_1 \rVert
 \end{equation}
 
 \noindent
-which for an axis-aligned span collapses to the familiar
+which for each axis comes out to:
 
 \begin{equation}
 W = \Delta u \frac{Z}{f_x}, \qquad H = \Delta v \frac{Z}{f_y} .
@@ -169,20 +160,30 @@ W = \Delta u \frac{Z}{f_x}, \qquad H = \Delta v \frac{Z}{f_y} .
 \end{equation}
 
 Width, height and diagonal therefore all come from Equation~\ref{eq:length} by
-one code path. Two implementation points matter. Both endpoints must lie at the
-same depth $Z$; measuring across a face that recedes from the camera violates
-the assumption regardless of calibration accuracy. And lens distortion is
+one code path. Both endpoints must lie at the
+same depth $Z$, and lens distortion is
 removed from the two selected points only, with
-\texttt{cv2.undistortPoints}, which returns \emph{normalised} coordinates
---- already $X/Z$ and $Y/Z$ --- so the dimension is
+\texttt{cv2.undistortPoints}, which returns \emph{normalised} coordinates,
+already $X/Z$ and $Y/Z$, so the dimension is
 $Z \cdot \lVert \Delta(\text{normalised}) \rVert$ with no further division by
 $f_x$.
 
-The script is \texttt{week\_2/module2/measurement/geometry.py}; running it
-directly executes its self-tests (pinhole round trip, distortion path, the $Z$
-and resolution guards, and $K$ rescaling).
+Figure~\ref{fig:step2} Shows an example. The two selected
+points span $1069.7\px$ across the top edge of a laptop lid at a tape-measured
+$Z = 1000\mm$, with a checkerboard displayed on its screen, and
+Equation~\ref{eq:length} turns that span into $317.7\mm$ against a ruler truth
+of $356.0\mm$. It is entry 1 of the validation set in Step 3.
 
-\section{Step 3 --- Validation experiment}
+\begin{figure}[H]
+\centering
+\includegraphics[trim=0 480 0 0,clip,width=0.62\textwidth]{figures/meas_board_1000mm.jpg}
+\caption{Step 2 on a single capture at $Z = 1000\mm$: the two selected points,
+the pixel span between them, and the dimension Equation~\ref{eq:length}
+returns for it.}
+\label{fig:step2}
+\end{figure}
+
+\section{Step 3: Validation experiment}
 
 Twenty object measurements were validated against ruler ground truth. Ground
 truth was recorded \emph{before} imaging. Both the object and the measured
@@ -190,9 +191,9 @@ dimension were varied: 15 diagonals and 5 widths, over ground-truth sizes from
 $77$ to $413\mm$. Nineteen measurements were taken at a nominal
 $Z = 2000\mm$, satisfying the requirement that the object be at least
 $2$ metres from the camera, and one at $Z = 1000\mm$. Each row stores the two
-full-resolution pixel coordinates alongside the result, so
-\texttt{analyze.py --recompute} re-derives every logged value from its pixels
-(agreeing to within $0.005\mm$). Figure~\ref{fig:meas} shows two of the
+full-resolution pixel coordinates alongside the result, so every logged value
+can be re-derived from its pixels; doing so reproduces the table to within
+$0.005\mm$. Figure~\ref{fig:meas} shows two of the
 annotated measurements, Table~\ref{tab:meas} lists all twenty, and
 Table~\ref{tab:stats} and Figure~\ref{fig:diagnostics} report the error
 statistics over them.
@@ -309,12 +310,13 @@ $\mathrm{corr}(Z, \text{percent error})$           & $+0.071$ \\
 \label{fig:diagnostics}
 \end{figure}
 
-\section{Theory --- Relating the image of a point in two cameras}
+\section{Theory: relating the image of a point in two cameras}
 
 Camera 1 is static; camera 2 sits at some distance from it and at an oblique
 orientation. A point $P = (X, Y, Z)$ lies in the field of view of both. What
 follows relates $x_1$, the image of $P$ in camera 1, to $x_2$, its image in
-camera 2.
+camera 2. Once the assumptions below are in place, the relationship is one
+substitution.
 
 \subsection{Assumptions}
 
@@ -325,139 +327,109 @@ camera 2.
         corner-localisation noise, so modelling it further would add
         parameters without reducing error.
   \item \textbf{Both cameras are calibrated.} $K_1$ and $K_2$ are known from a
-        Zhang calibration as in Step 1. If one phone captures both views then
-        $K_1 = K_2 = K$, which removes half the unknown intrinsics; that is the
-        case here.
+        Zhang calibration as in Step 1. If one phone captures both views, as
+        it does here, then $K_1 = K_2 = K$ and half the unknown intrinsics
+        disappear.
   \item \textbf{Zero skew, square pixels.} The Step 1 fit gives $f_y/f_x$
         within $0.03\%$ of unity and CMOS pixel axes are orthogonal by
         construction, so the skew term in $K$ is set to zero rather than
         estimated.
   \item \textbf{Rigid relative pose.} $R$ and $\mathbf{t}$ are constant for the
-        pair of exposures. From a rig, the rig does not flex; from one phone
-        moved by hand, $R$ and $\mathbf{t}$ refer to those two exposures and to
-        nothing else.
-  \item \textbf{World frame anchored to camera 1.} A free choice of gauge, not
-        a physical claim, and the one that makes the algebra clean: camera 1's
+        pair of exposures. With one phone moved by hand they describe those two
+        exposures and nothing else.
+  \item \textbf{World frame anchored to camera 1.} Camera 1's
         extrinsics become $[\,I \mid \mathbf{0}\,]$, so $P$ in the world frame
-        \emph{is} $P$ in camera 1's frame.
-  \item \textbf{$P$ has positive depth in both frames.} The chirality
-        condition, implied by ``within the FoV of both''. It is what makes the
-        projective equalities below correspond to real image points rather
-        than to points behind a camera.
-  \item \textbf{Static scene.} $P$ does not move between the two exposures ---
-        required whenever the views are captured sequentially with one camera.
+        is also $P$ in camera 1's frame.
 \end{enumerate}
 
-\subsection{The two projections}
+\subsection{The derivation}
 
-With $\cong$ denoting equality up to a nonzero scale in homogeneous
-coordinates, and the world frame on camera 1,
+With the world frame on camera 1, the two projections are
 
 \begin{equation}
-x_1 \cong K_1 [\,I \mid \mathbf{0}\,] X = K_1 P,
+x_1 = K_1 P,
 \qquad
-x_2 \cong K_2 [\,R \mid \mathbf{t}\,] X = K_2 (R P + \mathbf{t}),
+x_2 = K_2 (R P + \mathbf{t}),
 \label{eq:twoproj}
 \end{equation}
 
 \noindent
 where $x_1 = (u_1, v_1, 1)^{\!\top}$ and $x_2 = (u_2, v_2, 1)^{\!\top}$ are the
-homogeneous image points, $R \in SO(3)$ is camera 2's rotation relative to
-camera 1, and $\mathbf{t} = -R\tilde{C}$ with $\tilde{C}$ the centre of camera
-2 expressed in camera 1's frame --- so $\mathbf{t}$ is a translation
-\emph{in camera 2's frame}, not a displacement in camera 1's. ``Oblique
-orientation'' is precisely the statement $R \neq I$, and ``at some distance''
-is $\mathbf{t} \neq \mathbf{0}$.
+image points, $R$ is camera 2's rotation relative to camera 1, a proper 3D
+rotation with $R^{-1} = R^{\!\top}$, and $\mathbf{t} = -R\tilde{C}$ with
+$\tilde{C}$ the centre of camera
+2 expressed in camera 1's frame. ``Oblique orientation'' is the statement
+$R \neq I$, and ``at some distance'' is $\mathbf{t} \neq \mathbf{0}$.
 
-\subsection{Substitution gives the relationship}
+Only the first of the two has to be inverted, and Step 2 already did it. The
+intrinsic matrix is upper triangular, so its inverse is immediate,
 
-The first equation of \eqref{eq:twoproj} inverts to $P = Z\,K_1^{-1} x_1$,
-which is the Step 2 backprojection reused: $x_1$ fixes the ray on which $P$
-lies and the scalar $Z$ is the one missing quantity. Substituting into the
-second and dividing through by $Z$ --- legal because the relation is
-projective --- gives
+\begin{equation}
+K_1 =
+\begin{bmatrix}
+f_{x1} & 0 & c_{x1} \\ 0 & f_{y1} & c_{y1} \\ 0 & 0 & 1
+\end{bmatrix},
+\qquad
+K_1^{-1} =
+\begin{bmatrix}
+1/f_{x1} & 0 & -c_{x1}/f_{x1} \\
+0 & 1/f_{y1} & -c_{y1}/f_{y1} \\
+0 & 0 & 1
+\end{bmatrix},
+\label{eq:kinv}
+\end{equation}
+
+\noindent
+and applying it to $x_1$ strips the intrinsics off the measured pixel:
+
+\begin{equation}
+K_1^{-1} x_1 =
+\begin{pmatrix}
+(u_1 - c_{x1})/f_{x1} \\ (v_1 - c_{y1})/f_{y1} \\ 1
+\end{pmatrix}
+=
+\begin{pmatrix} X/Z \\ Y/Z \\ 1 \end{pmatrix},
+\qquad\text{so}\qquad
+P = Z\,K_1^{-1} x_1 .
+\label{eq:invert}
+\end{equation}
+
+The middle step is Equation~\ref{eq:backproject} written as a vector: $x_1$
+fixes the direction of the ray on which $P$ lies, and the scalar $Z$ says how
+far along that ray $P$ sits. Substituting this $P$ into camera 2's projection
+is then the whole derivation,
+
+\begin{align}
+x_2 &= K_2 (R P + \mathbf{t}) \notag \\
+    &= K_2 \bigl( R \,(Z\,K_1^{-1} x_1) + \mathbf{t} \bigr)
+       &&\text{(substitute $P$)} \notag \\
+    &= Z\,K_2 R K_1^{-1} x_1 + K_2 \mathbf{t}
+       &&\text{($R$, $K_2$ are linear; $Z$ is a scalar)} \notag \\
+    &= Z \left( K_2 R K_1^{-1} x_1 + \frac{1}{Z}\,K_2 \mathbf{t} \right)
+       &&\text{(factor out $Z$).}
+\label{eq:chain}
+\end{align}
+
+That leading $Z$ multiplies every entry of the bracket, including the third, so
+it divides straight back out when the pixels are read off and can be dropped.
+What is left is the relationship between the two images of $P$:
 
 \begin{equation}
 \boxed{\;
-x_2 \;\cong\; H_\infty\, x_1 \;+\; \frac{\mathbf{e}_2}{Z} \;}
-\qquad
-H_\infty = K_2 R K_1^{-1},
-\qquad
-\mathbf{e}_2 = K_2 \mathbf{t},
+x_2 \;=\; K_2 R K_1^{-1}\, x_1 \;+\; \frac{1}{Z}\,K_2 \mathbf{t} \;}
 \label{eq:main}
 \end{equation}
 
-\noindent
-where $H_\infty$ is the infinite homography and $\mathbf{e}_2$ the epipole in
-image 2. In words: the image of $P$ in camera 2 is $x_1$ warped by the rotation
-and the two sets of intrinsics, then displaced along the direction of the
-epipole by an amount inversely proportional to the depth of $P$. Two
-consequences follow. $H_\infty$ is the limit as $Z \to \infty$, so points at
-infinity map by $H_\infty$ alone and are unaffected by the baseline --- which
-is why distant scenery barely shifts between two views while near objects
-shift a lot. And sweeping $Z$ from $0$ to $\infty$ traces a line in image 2,
-the epipolar line of $x_1$: a single view cannot recover depth, because the
-whole line is consistent with the one observation $x_1$. That is why Step 2
-needed a measured $Z$.
-
-\subsection{The depth-free form}
-
-Eliminating $Z$ leaves a relation between the image coordinates alone. Since
-$P_2 = RP + \mathbf{t}$, the vectors $P_2$, $\mathbf{t}$ and $RP$ are coplanar,
-so the triple product $P_2 \cdot (\mathbf{t} \times RP)$ vanishes. In matrix
-form,
-
-\begin{equation}
-\boxed{\; x_2^{\!\top} F\, x_1 = 0 \;}
-\qquad
-F = K_2^{-\top} [\mathbf{t}]_\times R\, K_1^{-1},
-\qquad
-E = [\mathbf{t}]_\times R = K_2^{\!\top} F K_1,
-\label{eq:epipolar}
-\end{equation}
-
-\noindent
-with $F$ the fundamental matrix, $E$ the essential matrix and
-$[\mathbf{t}]_\times$ the skew-symmetric matrix satisfying
-$[\mathbf{t}]_\times y = \mathbf{t} \times y$. $F$ has 7 degrees of freedom
-(nine entries, less one for scale and one for $\det F = 0$) and $E$ has 5
-(three for $R$, three for $\mathbf{t}$, less one for the scale of
-$\mathbf{t}$). Because $E$ is unchanged by scaling $\mathbf{t}$, translation is
-recoverable from correspondences only up to scale; metric scale requires one
-real length in the world, such as a checkerboard square or a tape-measured
-baseline $\lVert \mathbf{t} \rVert$.
-
-\subsection{Scalar form}
-
-Writing the rows of $R$ as $r_1^{\!\top}, r_2^{\!\top}, r_3^{\!\top}$ and
-$\mathbf{t} = (t_x, t_y, t_z)^{\!\top}$, camera 2's projection is
-
-\begin{equation}
-u_2 = f_{x2}\,\frac{r_1^{\!\top}P + t_x}{r_3^{\!\top}P + t_z} + c_{x2},
-\qquad
-v_2 = f_{y2}\,\frac{r_2^{\!\top}P + t_y}{r_3^{\!\top}P + t_z} + c_{y2}.
-\label{eq:scalar}
-\end{equation}
-
-\noindent
-The denominator $r_3^{\!\top}P + t_z$ is the depth of $P$ in camera 2's frame.
-This form makes concrete what the matrix form hides: the mapping is nonlinear
-in $P$, and the nonlinearity sits entirely in that one shared denominator.
-Parametrising $R$ by ZYZ Euler angles, $R(\psi, \theta, \phi) = R_z(\phi)
-R_y(\theta) R_z(\psi)$, the complete set of static unknowns relating the two
-cameras is $(\psi, \theta, \phi, t_x, t_y, t_z)$ --- six numbers, of which five
-are recoverable from correspondences and the sixth, the scale of $\mathbf{t}$,
-needs one external length.
+The image of $P$ in camera 2 is therefore $x_1$ warped by the rotation and the
+two sets of intrinsics, then displaced by an amount inversely proportional to
+the depth of $P$. That depth is the only per-point quantity in the relation;
+everything else is fixed for the pair of cameras.
 
 \subsection{Parameters and variables}
 
-Table~\ref{tab:params} lists every symbol used above --- whether it is a
-static parameter of the pair of cameras, a quantity derived from those, or a
-per-point variable --- and how each one is measured or computed.
-
-\begin{table}[t]
-\caption{Every quantity in Equations~\eqref{eq:main}--\eqref{eq:scalar}, and
-how each is obtained.}
+\begin{table}[H]
+\caption{The static parameters and the per-point variables in
+Equation~\eqref{eq:main}, and how each is obtained.}
 \label{tab:params}
 \small
 \begin{tabularx}{\textwidth}{@{}llLL@{}}
@@ -466,69 +438,20 @@ Symbol & Type & Meaning & How obtained \\
 \midrule
 $K_1, K_2$ & static & Intrinsic matrix of each camera & Zhang calibration,
 Step 1. Equal if one phone takes both views. \\
-$\mathbf{d}_1, \mathbf{d}_2$ & static & Distortion coefficients & Step 1;
-applied to undistort both images before anything above is used. \\
 $R$ & static & Relative rotation, camera 1 $\to$ camera 2 &
-\texttt{cv2.stereoCalibrate} with the board visible in both views, or
-\texttt{cv2.recoverPose} / decomposition of $E$. \\
+\texttt{cv2.stereoCalibrate} with the board visible in both views, or from
+point correspondences. \\
 $\mathbf{t}$ & static & Relative translation, $\mathbf{t} = -R\tilde{C}$ & As
-for $R$. From $E$ alone it is direction-only; metric scale needs one known
-length. \\
-$\lVert \mathbf{t} \rVert$ & static & Baseline & Measured with a ruler, or
-fixed by the known square size in \texttt{stereoCalibrate}. \\
-$\psi, \theta, \phi$ & static & ZYZ Euler angles of $R$ & Extracted from $R$
-via \texttt{cv2.Rodrigues} and an Euler conversion. \\
-$H_\infty$ & derived & Infinite homography $K_2 R K_1^{-1}$ & Computed from
-$K_1, K_2, R$. \\
-$\mathbf{e}_2$ & derived & Epipole in image 2, $K_2\mathbf{t}$ & Computed from
-$K_2, \mathbf{t}$. \\
-$F$ & derived & Fundamental matrix & From $K_1, K_2, R, \mathbf{t}$, or
-estimated directly from $\geq 8$ correspondences
-(\texttt{cv2.findFundamentalMat}). \\
-$E$ & derived & Essential matrix $[\mathbf{t}]_\times R$ &
-$K_2^{\!\top} F K_1$, or \texttt{cv2.findEssentialMat} from $\geq 5$
-correspondences. \\
+for $R$. From correspondences alone it is direction-only; metric scale needs
+one known length. \\
 $x_1, x_2$ & variable & Image coordinates of $P$ in each view & Measured:
 feature detection and matching, or manual selection. \\
 $P = (X,Y,Z)$ & variable & The scene point & Unknown; recovered by
-triangulation once $x_1, x_2, R, \mathbf{t}$ are known. \\
+triangulating $x_1$ and $x_2$ once $R$ and $\mathbf{t}$ are known. \\
 $Z$ & variable & Depth of $P$ in camera 1's frame & Triangulated from the two
 views, or measured with a tape as in Step 3. \\
 \bottomrule
 \end{tabularx}
 \end{table}
-
-\subsection{Degenerate cases}
-
-\begin{description}
-  \item[Pure rotation, $\mathbf{t} = \mathbf{0}$.] Equation~\eqref{eq:main}
-    collapses to $x_2 \cong H_\infty x_1$ with no depth term: every point maps
-    by one homography however far away it is, so depth is unrecoverable and $F$
-    is undefined. Panning a phone on a tripod yields no depth information, no
-    matter how many frames are taken.
-  \item[$P$ on a plane.] If all points satisfy $n^{\!\top}P = d$, then $Z$ can
-    be eliminated through the plane equation and the mapping becomes the
-    plane-induced homography $H = K_2(R + \mathbf{t}n^{\!\top}\!/d)K_1^{-1}$,
-    again independent of per-point depth. This is the same coplanarity
-    degeneracy that makes one checkerboard view insufficient for calibration,
-    and why Zhang's method needs several orientations.
-  \item[$P$ on the baseline.] Then $x_1 \cong \mathbf{e}_1$ and
-    $x_2 \cong \mathbf{e}_2$, Equation~\eqref{eq:epipolar} is satisfied
-    identically, the correspondence carries no information and triangulation is
-    singular.
-\end{description}
-
-\subsection{Inverting the derivation: triangulation}
-
-With $x_1, x_2, R, \mathbf{t}$ and both intrinsics known, the two projections
-of \eqref{eq:twoproj} give four equations in the three unknowns of $P$.
-Writing each as a cross product $x \times (\mathcal{P}X) = \mathbf{0}$ yields a
-homogeneous system $A X = \mathbf{0}$, solved by the singular vector of $A$
-with the smallest singular value; \texttt{cv2.triangulatePoints} does exactly
-this. Real-world dimensions then follow as the Euclidean distance between two
-triangulated points, with no tape measure in the pipeline --- which directly
-addresses the limitation of Steps 2 and 3, whose accuracy is bounded below by
-how well $Z$ can be measured by hand. Metric scale must still enter once, via
-$\lVert \mathbf{t} \rVert$ or a known length in the scene.
 
 \end{document}
