@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}CSc 8830 &mdash; Assignments{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <a href="{{ url_for('home') }}"><strong>CSc 8830</strong></a> &middot; Computer Vision
+    <span class="sub">
+      {%- if assignment %}
+        Module {{ assignment.number }} &mdash; {{ assignment.title }}
+      {%- else %}
+        Weekly assignments
+      {%- endif %}
+    </span>
+  </div>
+  {# The switcher is the point of moving the app up a folder: every assignment
+     in the repo is one click away, from any page of any other one. #}
+  <div class="switcher">
+    <a href="{{ url_for('home') }}" class="{{ 'active' if not assignment else '' }}">All assignments</a>
+    {% for a in assignments %}
+      <a href="{{ url_for(a.index_endpoint) }}"
+         class="{{ 'active' if assignment and a.slug == assignment.slug else '' }}"
+         title="{{ a.title }}">Module {{ a.number }}</a>
+    {% endfor %}
+  </div>
+</header>
+
+{% if nav %}
+<nav class="mainnav">
+  {% for endpoint, label, part in nav %}
+    <a href="{{ url_for(endpoint) }}"
+       class="{{ 'active' if active_endpoint == endpoint else '' }}">
+      {% if part %}<span class="part">{{ part }}</span>{% endif %}
+      {{ label }}
+    </a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer>
+  {% if nav %}
+  <span>Every part of this assignment is reachable from the navigation bar above;
+    every other assignment from the switcher at the top right.</span>
+  {% else %}
+  <span>CSc 8830 &mdash; one server for every weekly assignment in the repository.</span>
+  {% endif %}
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

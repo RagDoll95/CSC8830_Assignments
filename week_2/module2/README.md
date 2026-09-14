@@ -41,7 +41,7 @@ Then delete the synthetic files and re-run the commands in
 ## Install
 
 ```bash
-cd module2
+cd week_2/module2
 python -m venv .venv && source .venv/bin/activate     # optional but recommended
 pip install -r requirements.txt
 ```
@@ -53,31 +53,39 @@ matplotlib 3.9.4.
 
 ## Launch the web application
 
+**The web app now lives at the repository root, not in this folder**, so one server
+reaches every weekly assignment. Module 2's pages are a blueprint inside it
+(`app/modules/module2.py`) and still import this folder's code, so nothing about the
+numbers changed — only where the server starts:
+
 ```bash
-cd module2
+cd ../..            # the repository root
 python app/app.py
-# open http://127.0.0.1:5000
+# open http://127.0.0.1:5000        -> every assignment
+#      http://127.0.0.1:5000/module-2/   -> this one
 ```
 
 Options: `--port 8000`, `--host 0.0.0.0`, `--debug`.
 
-The nav bar reaches all four parts, so a screen recording can walk the whole assignment
-without retyping URLs:
+The header switcher moves between assignments; the nav bar below it reaches all four
+parts of this one, so a screen recording can walk the whole assignment without retyping
+URLs:
 
 | Page | Part | What it does |
 |---|---|---|
-| `/` | — | Overview, loaded camera, CLI equivalents |
-| `/calibration` | A · Step 1 | Upload board images → fit `K` and distortion → per-image error table → corner overlays → download `camera_params.yaml` |
-| `/measurement` | B · Step 2 | Upload an image, enter `Z`, click two points → width/height/diagonal + error budget + annotated image |
-| `/validation` | C · Step 3 | Measurement table, full error statistics, diagnostic plots |
-| `/theory` | D | The two-camera derivation |
+| `/` | — | Home: every assignment in the repository |
+| `/module-2/` | — | Overview, loaded camera, CLI equivalents |
+| `/module-2/calibration` | A · Step 1 | Upload board images → fit `K` and distortion → per-image error table → corner overlays → download `camera_params.yaml` |
+| `/module-2/measurement` | B · Step 2 | Upload an image, enter `Z`, click two points → width/height/diagonal + error budget + annotated image |
+| `/module-2/validation` | C · Step 3 | Measurement table, full error statistics, diagnostic plots |
+| `/module-2/theory` | D | The two-camera derivation |
 
 ---
 
 ## Running the pipeline
 
 Every script carries its own `HOW TO RUN` block in its module docstring. Run all commands
-**from `module2/`**.
+**from `week_2/module2/`** — except the web app, which starts from the repository root.
 
 ### Step 1 — Calibration (Part A)
 
@@ -305,7 +313,13 @@ This is the error budget of section 12 made measurable instead of asserted.
 ## Repository layout
 
 ```
-module2/
+CSC8830_Assignments/
+  app/                          the web application, one server for every assignment
+    app.py                      Flask instance, home page, shared navigation
+    assignments.py              the registry: which assignments exist and where
+    modules/module2.py          Module 2's pages (this folder), as a blueprint
+    templates/  static/         base chrome + home page; templates/module2/ per page
+  week_2/module2/
   calibration/
     capture_check.py            pre-flight photos before fitting
     calibrate.py                Step 1: Zhang calibration -> camera_params.yaml
@@ -321,9 +335,6 @@ module2/
     output/                     statistics.txt, plots, annotated images
   theory/
     two_camera_derivation.md    Part D, typed, for the PDF
-  app/
-    app.py                      Flask app; all four parts from one nav bar
-    templates/  static/         pages and stylesheet
   tools/
     make_synthetic_data.py      renders the synthetic dataset
     simulate_measurements.py    stands in for the 20 manual clicks
@@ -334,7 +345,8 @@ module2/
 ```
 
 **Architectural rule:** `measurement/geometry.py` has no UI dependencies — no
-`cv2.imshow`, no Flask, no argparse. `measure_cli.py` and `app/app.py` both import it, so
+`cv2.imshow`, no Flask, no argparse. `measure_cli.py` and `app/modules/module2.py` both
+import it, so
 the CLI and the web app cannot disagree; `verify_pipeline.py` asserts numerically that
 they don't. The web app also imports `calibration/calibrate.py` and
 `validation/analyze.py` directly rather than reimplementing them, so every number on a
@@ -343,7 +355,8 @@ web page is produced by the same code the CLI runs.
 **The one real web gotcha, handled.** Canvas clicks arrive in *display* coordinates. A
 2016-px-wide photo shown in an 800-px canvas needs every click multiplied by 2.52 before
 it reaches the geometry, or every measurement is wrong by that factor. The browser posts
-the natural dimensions alongside each click and `app.scale_click()` converts server-side,
+the natural dimensions alongside each click and `modules.module2.scale_click()` converts
+server-side,
 against the server's own read of the image rather than the client's claim about it.
 `verify_pipeline.py` measures the same object through both paths and asserts they match
 (358.04 mm via an 800-px canvas vs. 358.00 mm ground truth).
@@ -354,11 +367,11 @@ against the server's own read of the image rather than the client's claim about 
 
 | Requirement | Where |
 |---|---|
-| Step 1: calibrate a smartphone camera | `calibration/calibrate.py`, `/calibration` |
-| Step 2: real-world 2D measurement from perspective projection | `measurement/geometry.py`, `/measurement` |
-| Step 3: object > 2 m, 20 measurements, error statistics | `validation/`, `/validation` |
-| Part D: two-camera derivation, typed | `theory/two_camera_derivation.md`, `/theory` |
-| Web app reaching all assignments | `app/app.py` — one nav bar, four pages |
+| Step 1: calibrate a smartphone camera | `calibration/calibrate.py`, `/module-2/calibration` |
+| Step 2: real-world 2D measurement from perspective projection | `measurement/geometry.py`, `/module-2/measurement` |
+| Step 3: object > 2 m, 20 measurements, error statistics | `validation/`, `/module-2/validation` |
+| Part D: two-camera derivation, typed | `theory/two_camera_derivation.md`, `/module-2/theory` |
+| Web app reaching all assignments | `app/` at the repository root — one home page, one nav bar per assignment |
 | ReadMe documentation at the top of each script | `HOW TO RUN` block in every module docstring |
 | Error estimate statistics | `validation/output/statistics.txt` |
 

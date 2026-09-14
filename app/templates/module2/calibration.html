@@ -71,7 +71,7 @@
     {% else %}
       <div class="warn">{{ cam_error }}</div>
     {% endif %}
-    <form method="post" action="{{ url_for('use_default_params') }}">
+    <form method="post" action="{{ url_for('module2.use_default_params') }}">
       <button type="submit" class="secondary">Reload the CLI's camera_params.yaml</button>
     </form>
   </div>
@@ -109,7 +109,7 @@
     </tbody>
   </table>
 
-  <a class="btn" href="{{ url_for('download_params', token=result.token) }}">
+  <a class="btn" href="{{ url_for('module2.download_params', token=result.token) }}">
     Download camera_params.yaml
   </a>
   <span class="small muted" style="margin-left:10px">
@@ -148,7 +148,7 @@
   <div class="thumbs">
     {% for name in result.debug_images %}
     <figure>
-      <img src="{{ url_for('calibration_debug_image', token=result.token, name=name) }}" alt="{{ name }}">
+      <img src="{{ url_for('module2.calibration_debug_image', token=result.token, name=name) }}" alt="{{ name }}">
       <figcaption>{{ name }}</figcaption>
     </figure>
     {% endfor %}
@@ -163,7 +163,7 @@
   <div class="thumbs">
     {% for name in existing_debug %}
     <figure>
-      <img src="{{ url_for('existing_debug_image', name=name) }}" alt="{{ name }}">
+      <img src="{{ url_for('module2.existing_debug_image', name=name) }}" alt="{{ name }}">
       <figcaption>{{ name }}</figcaption>
     </figure>
     {% endfor %}

@@ -25,9 +25,30 @@ body {
   background: var(--ink);
   color: #fff;
   padding: 14px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 18px;
 }
 .topbar .brand { font-size: 15px; }
+.topbar .brand a { color: #fff; text-decoration: none; }
+.topbar .brand a:hover { color: #9ec5f2; }
 .topbar .sub { color: #aeb7c2; margin-left: 10px; font-size: 13px; }
+
+/* Assignment switcher -- the app serves every assignment, so every page needs
+   a way back to the others. */
+.switcher { display: flex; flex-wrap: wrap; gap: 6px; }
+.switcher a {
+  color: #c9d1da;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid #3c4450;
+  border-radius: 999px;
+}
+.switcher a:hover { background: #2a3039; color: #fff; }
+.switcher a.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .mainnav {
   display: flex;

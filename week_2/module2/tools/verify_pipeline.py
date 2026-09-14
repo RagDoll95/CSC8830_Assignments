@@ -32,7 +32,8 @@ import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(HERE)                       # week_2/module2
+REPO_ROOT = os.path.dirname(os.path.dirname(ROOT))  # the web app lives here
 sys.path.insert(0, os.path.join(ROOT, "measurement"))
 sys.path.insert(0, HERE)
 
@@ -233,9 +234,11 @@ def main(argv=None):
 
             # The web app must scale display clicks back to full resolution
             # before the geometry ever sees them.
-            sys.path.insert(0, os.path.join(ROOT, "app"))
+            # The web layer moved up to <repo>/app, where one application
+            # serves every assignment; Module 2's pages are a blueprint in it.
+            sys.path.insert(0, os.path.join(REPO_ROOT, "app"))
             try:
-                from app import scale_click
+                from modules.module2 import scale_click
                 disp_w = 800
                 img = cv2.imread(sample)
                 nat_w, nat_h = img.shape[1], img.shape[0]

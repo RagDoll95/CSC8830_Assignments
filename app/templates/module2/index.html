@@ -29,33 +29,33 @@
 {% else %}
 <div class="warn">
   <strong>No camera parameters loaded.</strong> {{ cam_error }}
-  Start on the <a href="{{ url_for('calibration') }}">Calibration</a> page.
+  Start on the <a href="{{ url_for('module2.calibration') }}">Calibration</a> page.
 </div>
 {% endif %}
 
 <div class="cards">
-  <a class="card" href="{{ url_for('calibration') }}">
+  <a class="card" href="{{ url_for('module2.calibration') }}">
     <span class="tag">Part A &middot; Step 1</span>
     <strong>Camera calibration</strong>
     <span class="desc">Upload checkerboard images, fit K and the distortion
     coefficients by Zhang's multi-plane method, inspect the per-image
     reprojection error, download <code>camera_params.yaml</code>.</span>
   </a>
-  <a class="card" href="{{ url_for('measurement') }}">
+  <a class="card" href="{{ url_for('module2.measurement') }}">
     <span class="tag">Part B &middot; Step 2</span>
     <strong>Real-world measurement</strong>
     <span class="desc">Upload an image, enter the object distance Z, click two
     points, and read the width, height and diagonal in millimetres with an
     error budget.</span>
   </a>
-  <a class="card" href="{{ url_for('validation') }}">
+  <a class="card" href="{{ url_for('module2.validation') }}">
     <span class="tag">Part C &middot; Step 3</span>
     <strong>Validation experiment</strong>
     <span class="desc">{{ csv_rows }} logged measurements with ground truth, the
     full error statistics &mdash; bias, spread, MAE, RMSE, MAPE &mdash; and the
     diagnostic plots.</span>
   </a>
-  <a class="card" href="{{ url_for('theory') }}">
+  <a class="card" href="{{ url_for('module2.theory') }}">
     <span class="tag">Part D</span>
     <strong>Two-camera relationship</strong>
     <span class="desc">Derivation of the mapping between the image coordinates
@@ -79,7 +79,7 @@ X = (u &minus; c_x) &middot; Z / f_x    Y = (v &minus; c_y) &middot; Z / f_y    
 
 <div class="panel">
   <h2>Running it from the command line</h2>
-  <pre>cd module2
+  <pre>cd week_2/module2
 pip install -r requirements.txt
 
 python calibration/capture_check.py          # pre-flight the photos
@@ -89,6 +89,7 @@ python measurement/measure_cli.py --image PHOTO.jpg --Z 2400
 python validation/analyze.py                 # Step 3: error statistics
 python tools/verify_pipeline.py              # score the whole pipeline
 
-python app/app.py                            # this web app</pre>
+cd ../..                                     # the web app lives at the repo root
+python app/app.py                            # this web app, every assignment</pre>
 </div>
 {% endblock %}

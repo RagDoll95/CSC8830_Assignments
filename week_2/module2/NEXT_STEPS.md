@@ -388,8 +388,9 @@ python measurement/measure_cli.py --image validation/data/images/IMG_1042.jpg \
     --Z 2387 --points 812.5,431.0 1904.0,438.5
 
 # 2. Same photo, same Z, same two points clicked in the browser
-python app/app.py
-# open http://127.0.0.1:5000/measurement
+#    (the web app lives at the repository root and serves every assignment)
+python ../../app/app.py
+# open http://127.0.0.1:5000/module-2/measurement
 ```
 
 The two numbers should agree to within your click precision — a millimetre or two. If the
@@ -463,7 +464,7 @@ Required contents, per the assignment:
 6. **A note on the web app**, with the launch command.
 
 Getting the theory page into the PDF is easiest from the browser: open
-`http://127.0.0.1:5000/theory`, then Print → Save as PDF.
+`http://127.0.0.1:5000/module-2/theory`, then Print → Save as PDF.
 
 ---
 
@@ -497,8 +498,8 @@ Getting the theory page into the PDF is easiest from the browser: open
 |---|---|---|
 | "No camera parameters loaded" | Phase 1 has not been run | Run `calibrate.py`, or fit on the Calibration page |
 | Web number differs hugely from CLI | Display-coordinate scaling | Should not happen — the code handles it. Rerun `verify_pipeline.py` and report it |
-| Upload rejected | Not an image, or over 200 MB | Check the extension; the cap is in `app/app.py` |
-| Port already in use | Something else on 5000 | `python app/app.py --port 8000` |
+| Upload rejected | Not an image, or over 200 MB | Extensions are in `app/modules/module2.py`; the size cap is in `app/app.py` |
+| Port already in use | Something else on 5000 | `python ../../app/app.py --port 8000` |
 
 ---
 
@@ -560,6 +561,6 @@ python measurement/measure_cli.py --image validation/data/images/IMG_xxxx.jpg \
 # Phase 4
 python validation/analyze.py
 
-# Phases 5-6
-python app/app.py
+# Phases 5-6 -- the web app starts from the repository root, not from here
+python ../../app/app.py        # http://127.0.0.1:5000/module-2/
 ```

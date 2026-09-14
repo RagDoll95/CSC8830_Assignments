@@ -53,7 +53,7 @@
       <dt>RMS</dt><dd>{{ "%.4f"|format(cam.rms) }} px</dd>
     </dl>
     {% else %}
-    <div class="warn">Calibrate first on the <a href="{{ url_for('calibration') }}">Step 1</a> page.</div>
+    <div class="warn">Calibrate first on the <a href="{{ url_for('module2.calibration') }}">Step 1</a> page.</div>
     {% endif %}
     <div class="note small">
       <strong>Getting Z right matters more than anything else here.</strong>
@@ -232,7 +232,7 @@
     statusEl.textContent = 'Measuring…';
     statusEl.className = 'small muted';
 
-    fetch({{ url_for('api_measure')|tojson }}, {
+    fetch({{ url_for('module2.api_measure')|tojson }}, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

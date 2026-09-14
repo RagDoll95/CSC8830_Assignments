@@ -1,7 +1,3 @@
-# Uploads made through the web app are session scratch, not source.
-app/uploads/*
-!app/uploads/.gitkeep
-
 # Python
 __pycache__/
 *.py[cod]

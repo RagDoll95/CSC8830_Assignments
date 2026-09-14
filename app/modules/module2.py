@@ -1,26 +1,34 @@
-"""
-Part E -- web application. All four parts of the assignment reachable from one page.
+"""Module 2 -- camera calibration and real-world measurement, as a blueprint.
+
+PAGES
+    /module-2/              overview + navigation
+    /module-2/calibration   Step 1: upload board images, fit, download camera_params.yaml
+    /module-2/measurement   Step 2: upload an image, enter Z, click two points, measure
+    /module-2/validation    Step 3: load the CSV, see the table, statistics and plots
+    /module-2/theory        Part D: the two-camera derivation
 
 HOW TO RUN
-    # from module2/
-    pip install -r requirements.txt
+    # from the repository root
+    pip install -r week_2/module2/requirements.txt
     python app/app.py
     # then open http://127.0.0.1:5000
 
-    # options
-    python app/app.py --port 8000 --host 0.0.0.0 --debug
+WHY THIS IS A BLUEPRINT AND NOT A FLASK APP
+    app/app.py owns the Flask instance and mounts one blueprint per assignment,
+    so a single server reaches every assignment in the repo from one home page.
+    This file owns Module 2 and nothing else.
 
-PAGES
-    /              overview + navigation
-    /calibration   Step 1: upload board images, fit, download camera_params.yaml
-    /measurement   Step 2: upload an image, enter Z, click two points, measure
-    /validation    Step 3: load the CSV, see the table, statistics and plots
-    /theory        Part D: the two-camera derivation
+WHERE MODULE 2's CODE LIVES
+    Only the web layer moved up to app/. The assignment's own code stays in
+    week_2/module2/{calibration,measurement,validation,theory}, and the path to
+    it comes from the registry in app/assignments.py -- one line to change if
+    the module is ever moved or renamed, and this file does not move with it.
 
 DESIGN RULE
-    No geometry lives in this file. Every number comes from measurement/geometry.py
-    and calibration/calibrate.py -- the same code the CLI uses -- so the web app
-    and the CLI cannot disagree. tools/verify_pipeline.py asserts that they do not.
+    No geometry lives in this file. Every number comes from
+    week_2/module2/measurement/geometry.py and .../calibration/calibrate.py --
+    the same code the CLI uses -- so the web app and the CLI cannot disagree.
+    week_2/module2/tools/verify_pipeline.py asserts that they do not.
 
 THE ONE REAL GOTCHA (plan section 25)
     Canvas clicks arrive in DISPLAY coordinates. A 2016-px-wide photo shown in
@@ -31,7 +39,6 @@ THE ONE REAL GOTCHA (plan section 25)
     full-resolution image, because K was calibrated at full resolution.
 """
 
-import argparse
 import csv
 import io
 import os
@@ -41,34 +48,42 @@ import uuid
 
 import cv2
 import numpy as np
-from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   send_file, send_from_directory, url_for)
+from flask import (Blueprint, abort, jsonify, redirect, render_template,
+                   request, send_file, send_from_directory, url_for)
 from werkzeug.utils import secure_filename
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "measurement"))
-sys.path.insert(0, os.path.join(ROOT, "calibration"))
-sys.path.insert(0, os.path.join(ROOT, "validation"))
+APP_DIR = os.path.dirname(HERE)
+if APP_DIR not in sys.path:
+    # Also lets week_2/module2/tools/verify_pipeline.py import this module
+    # directly to check the click scaling against the CLI.
+    sys.path.insert(0, APP_DIR)
+
+from assignments import REPO_ROOT, UPLOAD_ROOT, get  # noqa: E402
+
+ASSIGNMENT = get("module-2")
+MODULE = ASSIGNMENT.dir                     # <repo>/week_2/module2
+
+for _part in ("measurement", "calibration", "validation"):
+    sys.path.insert(0, os.path.join(MODULE, _part))
 
 from geometry import (CalibrationError, annotate, check_resolution,  # noqa: E402
                       load_params, measure, measure_uncertainty)
 import calibrate as calib  # noqa: E402
 import analyze  # noqa: E402
 
-UPLOAD_ROOT = os.path.join(HERE, "uploads")
-DEFAULT_PARAMS = os.path.join(ROOT, "calibration", "output", "camera_params.yaml")
-DEFAULT_CSV = os.path.join(ROOT, "validation", "data", "measurements.csv")
-VALIDATION_OUTPUT = os.path.join(ROOT, "validation", "output")
-SAMPLE_MEAS_DIR = os.path.join(ROOT, "validation", "data", "images")
-CALIB_DEBUG_DIR = os.path.join(ROOT, "calibration", "output", "debug")
+UPLOADS = os.path.join(UPLOAD_ROOT, ASSIGNMENT.slug)
+DEFAULT_PARAMS = os.path.join(MODULE, "calibration", "output", "camera_params.yaml")
+DEFAULT_CSV = os.path.join(MODULE, "validation", "data", "measurements.csv")
+VALIDATION_OUTPUT = os.path.join(MODULE, "validation", "output")
+SAMPLE_MEAS_DIR = os.path.join(MODULE, "validation", "data", "images")
+CALIB_DEBUG_DIR = os.path.join(MODULE, "calibration", "output", "debug")
 
-# Phone photos are large; cap the request and reject non-images.
-MAX_CONTENT_MB = 200
+# Phone photos are large; the request-size cap lives in app/app.py because it
+# is a property of the Flask instance. Non-images are rejected here.
 ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_MB * 1024 * 1024
+bp = Blueprint("module2", __name__)
 
 
 # --------------------------------------------------------------------------
@@ -95,7 +110,7 @@ def session_dir(token=None, create=True):
     token = token or uuid.uuid4().hex[:12]
     if not all(c in "0123456789abcdef" for c in token):
         abort(400, "bad token")
-    path = os.path.join(UPLOAD_ROOT, token)
+    path = os.path.join(UPLOADS, token)
     if create:
         os.makedirs(path, exist_ok=True)
     return token, path
@@ -103,7 +118,7 @@ def session_dir(token=None, create=True):
 
 def active_params_path():
     """The most recent web-fitted calibration, else the CLI's output."""
-    marker = os.path.join(UPLOAD_ROOT, "active_params.txt")
+    marker = os.path.join(UPLOADS, "active_params.txt")
     if os.path.exists(marker):
         with open(marker) as fh:
             candidate = fh.read().strip()
@@ -113,8 +128,8 @@ def active_params_path():
 
 
 def set_active_params(path):
-    os.makedirs(UPLOAD_ROOT, exist_ok=True)
-    with open(os.path.join(UPLOAD_ROOT, "active_params.txt"), "w") as fh:
+    os.makedirs(UPLOADS, exist_ok=True)
+    with open(os.path.join(UPLOADS, "active_params.txt"), "w") as fh:
         fh.write(path)
 
 
@@ -126,69 +141,65 @@ def camera_or_none():
 
 
 # --------------------------------------------------------------------------
-# Navigation -- one nav bar across every page, so a screen recording can walk
-# the whole assignment without retyping URLs.
+# Navigation -- one nav bar across every page of this assignment, so a screen
+# recording can walk it without retyping URLs. app/app.py injects this into
+# the templates rendered under this blueprint.
 # --------------------------------------------------------------------------
 NAV = [
-    ("index", "Overview", ""),
-    ("calibration", "Step 1 - Calibration", "Part A"),
-    ("measurement", "Step 2 - Measurement", "Part B"),
-    ("validation", "Step 3 - Validation", "Part C"),
-    ("theory", "Theory - Two Cameras", "Part D"),
+    ("module2.index", "Overview", ""),
+    ("module2.calibration", "Step 1 - Calibration", "Part A"),
+    ("module2.measurement", "Step 2 - Measurement", "Part B"),
+    ("module2.validation", "Step 3 - Validation", "Part C"),
+    ("module2.theory", "Theory - Two Cameras", "Part D"),
 ]
-
-
-@app.context_processor
-def inject_nav():
-    return {"nav": NAV, "active_endpoint": request.endpoint}
 
 
 # --------------------------------------------------------------------------
 # Overview
 # --------------------------------------------------------------------------
-@app.route("/")
+@bp.route("/")
 def index():
     cam, err = camera_or_none()
     csv_rows = 0
     if os.path.exists(DEFAULT_CSV):
         with open(DEFAULT_CSV, newline="") as fh:
             csv_rows = sum(1 for _ in csv.DictReader(fh))
-    return render_template("index.html", cam=cam, cam_error=err,
-                           params_path=os.path.relpath(active_params_path(), ROOT),
+    return render_template("module2/index.html", cam=cam, cam_error=err,
+                           params_path=os.path.relpath(active_params_path(), REPO_ROOT),
                            csv_rows=csv_rows)
 
 
 # --------------------------------------------------------------------------
 # Step 1 -- calibration
 # --------------------------------------------------------------------------
-@app.route("/calibration", methods=["GET", "POST"])
+@bp.route("/calibration", methods=["GET", "POST"])
 def calibration():
     cam, err = camera_or_none()
     context = {
         "cam": cam, "cam_error": err,
-        "params_path": os.path.relpath(active_params_path(), ROOT),
+        "params_path": os.path.relpath(active_params_path(), REPO_ROOT),
         "existing_debug": sorted(os.listdir(CALIB_DEBUG_DIR))[:12]
         if os.path.isdir(CALIB_DEBUG_DIR) else [],
         "pattern_default": "%dx%d" % calib.PATTERN_SIZE,
         "square_default": calib.SQUARE_SIZE_MM,
     }
     if request.method == "GET":
-        return render_template("calibration.html", **context)
+        return render_template("module2/calibration.html", **context)
 
     files = [f for f in request.files.getlist("images") if f and f.filename]
     if not files:
         context["error"] = "No files selected."
-        return render_template("calibration.html", **context), 400
+        return render_template("module2/calibration.html", **context), 400
 
     try:
         pattern_size = calib.parse_pattern(request.form.get("pattern", "9x6"))
         square = float(request.form.get("square_size", calib.SQUARE_SIZE_MM))
     except (ValueError, IndexError):
         context["error"] = "Pattern must look like 9x6 and square size must be a number."
-        return render_template("calibration.html", **context), 400
+        return render_template("module2/calibration.html", **context), 400
     if square <= 0:
         context["error"] = "Square size must be positive."
-        return render_template("calibration.html", **context), 400
+        return render_template("module2/calibration.html", **context), 400
 
     token, sess = session_dir()
     img_dir = os.path.join(sess, "images")
@@ -209,7 +220,7 @@ def calibration():
         shutil.rmtree(sess, ignore_errors=True)
         context["error"] = ("None of the uploaded files were images (%s)."
                             % ", ".join(sorted(ALLOWED_IMAGE_EXT)))
-        return render_template("calibration.html", **context), 400
+        return render_template("module2/calibration.html", **context), 400
 
     # Same detection + fit the CLI runs -- imported, not reimplemented.
     objpoints, imgpoints, accepted, image_size, rejected = calib.detect_corners(
@@ -220,7 +231,7 @@ def calibration():
                             "to fit. Check the pattern size and the photos."
                             % (len(objpoints), pattern_size[0], pattern_size[1]))
         context["rejected"] = [(os.path.basename(p), why) for p, why in rejected]
-        return render_template("calibration.html", **context), 400
+        return render_template("module2/calibration.html", **context), 400
 
     rms, K, dist, rvecs, tvecs = cv2.calibrateCamera(
         objpoints, imgpoints, image_size, None, None)
@@ -236,7 +247,7 @@ def calibration():
     context.update({
         "cam": fitted,
         "cam_error": None,
-        "params_path": os.path.relpath(yaml_path, ROOT),
+        "params_path": os.path.relpath(yaml_path, REPO_ROOT),
         "result": {
             "token": token,
             "rms": float(rms),
@@ -259,10 +270,10 @@ def calibration():
             ],
         },
     })
-    return render_template("calibration.html", **context)
+    return render_template("module2/calibration.html", **context)
 
 
-@app.route("/calibration/download/<token>")
+@bp.route("/calibration/download/<token>")
 def download_params(token):
     _, sess = session_dir(token, create=False)
     path = os.path.join(sess, "camera_params.yaml")
@@ -271,45 +282,45 @@ def download_params(token):
     return send_file(path, as_attachment=True, download_name="camera_params.yaml")
 
 
-@app.route("/calibration/debug/<token>/<path:name>")
+@bp.route("/calibration/debug/<token>/<path:name>")
 def calibration_debug_image(token, name):
     _, sess = session_dir(token, create=False)
     return send_from_directory(os.path.join(sess, "debug"), name)
 
 
-@app.route("/calibration/existing-debug/<path:name>")
+@bp.route("/calibration/existing-debug/<path:name>")
 def existing_debug_image(name):
     return send_from_directory(CALIB_DEBUG_DIR, name)
 
 
-@app.route("/calibration/use-default", methods=["POST"])
+@bp.route("/calibration/use-default", methods=["POST"])
 def use_default_params():
     """Fall back to the calibration produced by the CLI."""
     set_active_params(DEFAULT_PARAMS)
-    return redirect(url_for("calibration"))
+    return redirect(url_for(".calibration"))
 
 
 # --------------------------------------------------------------------------
 # Step 2 -- measurement
 # --------------------------------------------------------------------------
-@app.route("/measurement", methods=["GET", "POST"])
+@bp.route("/measurement", methods=["GET", "POST"])
 def measurement():
     cam, err = camera_or_none()
     samples = sorted(os.listdir(SAMPLE_MEAS_DIR))[:8] if os.path.isdir(
         SAMPLE_MEAS_DIR) else []
     context = {
         "cam": cam, "cam_error": err,
-        "params_path": os.path.relpath(active_params_path(), ROOT),
+        "params_path": os.path.relpath(active_params_path(), REPO_ROOT),
         "samples": samples,
         "image_url": None, "token": None,
         "nat_w": None, "nat_h": None,
     }
     if request.method == "GET":
-        return render_template("measurement.html", **context)
+        return render_template("module2/measurement.html", **context)
 
     if cam is None:
         context["error"] = "Calibrate first: no camera parameters are loaded."
-        return render_template("measurement.html", **context), 400
+        return render_template("module2/measurement.html", **context), 400
 
     sample = request.form.get("sample")
     token, sess = session_dir()
@@ -324,18 +335,18 @@ def measurement():
         f = request.files.get("image")
         if not f or not f.filename:
             context["error"] = "No image selected."
-            return render_template("measurement.html", **context), 400
+            return render_template("module2/measurement.html", **context), 400
         name = secure_filename(f.filename)
         if not allowed_image(name):
             context["error"] = "Not an image file."
-            return render_template("measurement.html", **context), 400
+            return render_template("module2/measurement.html", **context), 400
         dest = os.path.join(sess, name)
         f.save(dest)
 
     img = cv2.imread(dest, cv2.IMREAD_COLOR)
     if img is None:
         context["error"] = "Could not decode that image."
-        return render_template("measurement.html", **context), 400
+        return render_template("module2/measurement.html", **context), 400
     nat_h, nat_w = img.shape[:2]
 
     warning = None
@@ -347,7 +358,7 @@ def measurement():
         res_error = str(exc)
 
     context.update({
-        "image_url": url_for("uploaded_image", token=token, name=os.path.basename(dest)),
+        "image_url": url_for(".uploaded_image", token=token, name=os.path.basename(dest)),
         "image_name": os.path.basename(dest),
         "token": token,
         "nat_w": nat_w, "nat_h": nat_h,
@@ -356,16 +367,16 @@ def measurement():
         "z_default": request.form.get("Z", "2400"),
         "allow_scaling": bool(request.form.get("allow_scaling")),
     })
-    return render_template("measurement.html", **context)
+    return render_template("module2/measurement.html", **context)
 
 
-@app.route("/uploads/<token>/<path:name>")
+@bp.route("/uploads/<token>/<path:name>")
 def uploaded_image(token, name):
     _, sess = session_dir(token, create=False)
     return send_from_directory(sess, name)
 
 
-@app.route("/api/measure", methods=["POST"])
+@bp.route("/api/measure", methods=["POST"])
 def api_measure():
     """Two display-space clicks + Z -> real-world dimensions.
 
@@ -428,29 +439,29 @@ def api_measure():
         "warning": warning,
         "client_natural": [nat_w, nat_h],
         "server_natural": [real_w, real_h],
-        "annotated_url": url_for("uploaded_image", token=token, name=annot_name),
+        "annotated_url": url_for(".uploaded_image", token=token, name=annot_name),
     })
 
 
 # --------------------------------------------------------------------------
 # Step 3 -- validation
 # --------------------------------------------------------------------------
-@app.route("/validation", methods=["GET", "POST"])
+@bp.route("/validation", methods=["GET", "POST"])
 def validation():
-    context = {"csv_path": os.path.relpath(DEFAULT_CSV, ROOT), "plots": []}
+    context = {"csv_path": os.path.relpath(DEFAULT_CSV, REPO_ROOT), "plots": []}
 
     rows = None
     if request.method == "POST":
         f = request.files.get("csv")
         if not f or not f.filename:
             context["error"] = "No CSV selected."
-            return render_template("validation.html", **context), 400
+            return render_template("module2/validation.html", **context), 400
         try:
             text = f.read().decode("utf-8-sig")
             rows = list(csv.DictReader(io.StringIO(text)))
         except (UnicodeDecodeError, csv.Error) as exc:
             context["error"] = "Could not parse that CSV: %s" % exc
-            return render_template("validation.html", **context), 400
+            return render_template("module2/validation.html", **context), 400
         context["csv_path"] = secure_filename(f.filename)
     elif os.path.exists(DEFAULT_CSV):
         with open(DEFAULT_CSV, newline="") as fh:
@@ -460,19 +471,19 @@ def validation():
         context["error"] = ("No measurements found. Log 20 rows in %s, or generate "
                             "the synthetic stand-in with tools/make_synthetic_data.py "
                             "and tools/simulate_measurements.py."
-                            % os.path.relpath(DEFAULT_CSV, ROOT))
-        return render_template("validation.html", **context)
+                            % os.path.relpath(DEFAULT_CSV, REPO_ROOT))
+        return render_template("module2/validation.html", **context)
 
     missing = [c for c in analyze.REQUIRED if c not in rows[0]]
     if missing:
         context["error"] = "CSV is missing column(s): %s" % ", ".join(missing)
-        return render_template("validation.html", **context), 400
+        return render_template("module2/validation.html", **context), 400
 
     try:
         gt, meas, Z, err, pct, stats = analyze.compute(rows)
     except (ValueError, KeyError) as exc:
         context["error"] = "Could not compute statistics: %s" % exc
-        return render_template("validation.html", **context), 400
+        return render_template("module2/validation.html", **context), 400
 
     table = []
     for i, r in enumerate(rows):
@@ -501,10 +512,10 @@ def validation():
         "worst": rows[stats["max_abs_error_idx"]],
         "report_text": analyze.report(rows, gt, meas, Z, err, pct, stats),
     })
-    return render_template("validation.html", **context)
+    return render_template("module2/validation.html", **context)
 
 
-@app.route("/validation/plot/<path:name>")
+@bp.route("/validation/plot/<path:name>")
 def validation_plot(name):
     return send_from_directory(VALIDATION_OUTPUT, name)
 
@@ -512,42 +523,6 @@ def validation_plot(name):
 # --------------------------------------------------------------------------
 # Part D -- theory
 # --------------------------------------------------------------------------
-@app.route("/theory")
+@bp.route("/theory")
 def theory():
-    return render_template("theory.html")
-
-
-@app.errorhandler(413)
-def too_large(_exc):
-    return render_template("error.html",
-                           message="Upload exceeds the %d MB limit."
-                                   % MAX_CONTENT_MB), 413
-
-
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="Module 2 web application")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=5000)
-    ap.add_argument("--debug", action="store_true")
-    args = ap.parse_args(argv)
-
-    os.makedirs(UPLOAD_ROOT, exist_ok=True)
-    print("=" * 66)
-    print("CSc 8830 Module 2 -- web application")
-    print("=" * 66)
-    params = active_params_path()
-    if os.path.exists(params):
-        cam = load_params(params)
-        print("camera   : %s" % os.path.relpath(params, ROOT))
-        print("           fx=%.2f fy=%.2f cx=%.2f cy=%.2f @ %dx%d"
-              % (cam.fx, cam.fy, cam.cx, cam.cy, cam.width, cam.height))
-    else:
-        print("camera   : NONE -- run Step 1 first, or fit on the Calibration page")
-    print("open     : http://%s:%d" % (args.host, args.port))
-    print("=" * 66)
-    app.run(host=args.host, port=args.port, debug=args.debug)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    return render_template("module2/theory.html")

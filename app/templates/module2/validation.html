@@ -169,7 +169,7 @@
     points at a specific cause rather than noise.
   </p>
   {% for p in plots %}
-    <img src="{{ url_for('validation_plot', name=p) }}" alt="{{ p }}"
+    <img src="{{ url_for('module2.validation_plot', name=p) }}" alt="{{ p }}"
          style="max-width:100%;border:1px solid var(--line);border-radius:6px;margin-bottom:14px">
   {% endfor %}
 </div>
@@ -184,7 +184,7 @@
     corresponds to a range of depths rather than one, and no single Z makes the
     computation exact. A single view cannot recover depth, which is why Z has to be
     measured with a tape at all; the
-    <a href="{{ url_for('theory') }}">two-camera derivation</a> shows how a second view
+    <a href="{{ url_for('module2.theory') }}">two-camera derivation</a> shows how a second view
     removes that dependence via triangulation.
   </p>
 </div>
