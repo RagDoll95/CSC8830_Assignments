@@ -1,0 +1,7 @@
+# Uploads made through the web app are session scratch, not source. One
+# subfolder per assignment: uploads/<slug>/...
+uploads/*
+!uploads/.gitkeep
+
+__pycache__/
+*.py[cod]

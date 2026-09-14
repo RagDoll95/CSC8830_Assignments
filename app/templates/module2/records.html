@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Module 2 &mdash; Records{% endblock %}
+
+{% block content %}
+<h1>Records</h1>
+
+{% if deleted %}<div class="ok small">Deleted record {{ deleted }}.</div>{% endif %}
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if stale_calibration %}
+<div class="warn small">
+  Calibration re-fitted after these rows were logged &mdash;
+  <code class="inline">python validation/analyze.py --recompute</code> to re-derive.
+</div>
+{% endif %}
+
+{% if empty %}
+<div class="panel">
+  <p>No measurements recorded yet.</p>
+  <p><a class="btn" href="{{ url_for('module2.measure') }}">Go to Measure &rarr;</a></p>
+</div>
+{% endif %}
+
+{% if stats %}
+<div class="panel">
+  <h2>Error over {{ stats.n }} measurement{{ '' if stats.n == 1 else 's' }}</h2>
+
+  <div class="readout">
+    <div class="stat">
+      <div class="label">Mean signed error</div>
+      <div class="value">{{ "%+.2f"|format(stats.mean_signed_error_mm) }} <small>mm</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">Std deviation</div>
+      <div class="value">{{ "%.2f"|format(stats.std_error_mm) }} <small>mm</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">MAPE</div>
+      <div class="value">{{ "%.2f"|format(stats.mape_pct) }} <small>%</small></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <table>
+      <tbody>
+        <tr><td>n</td><td class="num">{{ stats.n }}</td></tr>
+        <tr><td>mean signed error</td><td class="num">{{ "%+.2f"|format(stats.mean_signed_error_mm) }} mm</td></tr>
+        <tr><td>std deviation</td><td class="num">{{ "%.2f"|format(stats.std_error_mm) }} mm</td></tr>
+        <tr><td>MAE</td><td class="num">{{ "%.2f"|format(stats.mae_mm) }} mm</td></tr>
+        <tr><td>RMSE</td><td class="num">{{ "%.2f"|format(stats.rmse_mm) }} mm</td></tr>
+        {% if stats.ci95_mm %}
+        <tr><td>95% CI on the mean</td>
+          <td class="num">[{{ "%+.2f"|format(stats.ci95_mm[0]) }}, {{ "%+.2f"|format(stats.ci95_mm[1]) }}] mm</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <table>
+      <tbody>
+        <tr><td>mean signed percent error</td><td class="num">{{ "%+.2f"|format(stats.mean_signed_pct) }} %</td></tr>
+        <tr><td>MAPE</td><td class="num">{{ "%.2f"|format(stats.mape_pct) }} %</td></tr>
+        <tr><td>std of percent error</td><td class="num">{{ "%.2f"|format(stats.std_pct) }} %</td></tr>
+        <tr><td>most negative error</td><td class="num">{{ "%+.2f"|format(stats.min_error_mm) }} mm</td></tr>
+        <tr><td>most positive error</td><td class="num">{{ "%+.2f"|format(stats.max_error_mm) }} mm</td></tr>
+        {% for label, value, _note in trends %}
+        <tr><td>{{ label }}</td><td class="num">{{ "%+.3f"|format(value) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small muted">
+    Sizes {{ "%.0f"|format(stats.gt_min_mm) }}&ndash;{{ "%.0f"|format(stats.gt_max_mm) }} mm;
+    Z {{ "%.0f"|format(stats.Z_min_mm) }}&ndash;{{ "%.0f"|format(stats.Z_max_mm) }} mm.
+    Largest absolute error: {{ worst.object }} ({{ worst.dimension }}), id {{ worst.id }}.
+  </p>
+
+  <h3>Per dimension</h3>
+  <table>
+    <thead><tr><th>dimension</th><th class="num">n</th><th class="num">mean error</th>
+      <th class="num">std error</th><th class="num">MAPE</th></tr></thead>
+    <tbody>
+    {% for d in by_dim %}
+      <tr>
+        <td>{{ d.dim }}</td>
+        <td class="num">{{ d.n }}</td>
+        <td class="num">{{ "%+.2f"|format(d.mean) }} mm</td>
+        <td class="num">{{ "%.2f"|format(d.std) }} mm</td>
+        <td class="num">{{ "%.2f"|format(d.mape) }} %</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>The {{ stats.n }} measurement{{ '' if stats.n == 1 else 's' }}</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>id</th><th>object</th><th>dim</th><th class="num">Z (mm)</th>
+          <th class="num">truth (mm)</th><th class="num">measured (mm)</th>
+          <th class="num">error (mm)</th><th class="num">error (%)</th>
+          <th>figure</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.object }}</td>
+          <td>{{ r.dimension }}</td>
+          <td class="num">{{ "%.1f"|format(r.Z) }}</td>
+          <td class="num">{{ "%.2f"|format(r.gt) }}</td>
+          <td class="num">{{ "%.2f"|format(r.meas) }}</td>
+          <td class="num {{ 'pos' if r.err > 0 else 'neg' }}">{{ "%+.2f"|format(r.err) }}</td>
+          <td class="num {{ 'pos' if r.pct > 0 else 'neg' }}">{{ "%+.2f"|format(r.pct) }}</td>
+          <td class="small">
+            {% if r.figure %}
+              <a href="{{ url_for('module2.report_figure', name=r.figure) }}">{{ r.figure }}</a>
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('module2.record_delete') }}"
+                  onsubmit="return confirm('Delete record {{ r.id }} and its figure?')">
+              <input type="hidden" name="id" value="{{ r.id }}">
+              <button type="submit" class="secondary"
+                      style="padding:3px 9px;font-size:12px;margin:0">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if plots %}
+<div class="panel">
+  <h2>Diagnostic plots</h2>
+  {% for p in plots %}
+    <img src="{{ url_for('module2.validation_plot', name=p) }}" alt="{{ p }}"
+         style="max-width:100%;border:1px solid var(--line);border-radius:6px;margin-bottom:14px">
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Downloads</h2>
+  <p>
+    {% if not empty %}
+    <a class="btn secondary" href="{{ url_for('module2.records_csv') }}">measurements.csv</a>
+    {% endif %}
+    {% if figures %}
+    <a class="btn" href="{{ url_for('module2.figures_zip') }}">Report figures .zip</a>
+    {% endif %}
+  </p>
+  <p class="small muted"><code class="inline">{{ csv_path }}</code></p>
+  <form method="post" enctype="multipart/form-data">
+    <label for="csv">Replace the log from a CSV</label>
+    <input type="file" id="csv" name="csv" accept=".csv,text/csv">
+    <button type="submit" class="secondary">Load</button>
+  </form>
+</div>
+
+{% if figures %}
+<details class="panel">
+  <summary><strong>Report figures</strong>
+    <span class="small muted">({{ figures|length }}, annotated at {{ 1400 }} px)</span></summary>
+  <div class="thumbs" style="margin-top:12px">
+    {% for name in figures %}
+    <figure>
+      <a href="{{ url_for('module2.report_figure', name=name) }}">
+        <img src="{{ url_for('module2.report_figure', name=name) }}" alt="{{ name }}">
+      </a>
+      <figcaption>{{ name }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{% if report_text %}
+<details class="panel">
+  <summary><strong>Full text report</strong>
+    <span class="small muted">(validation/output/statistics.txt)</span></summary>
+  <pre class="plain" style="margin-top:12px">{{ report_text }}</pre>
+</details>
+{% endif %}
+{% endblock %}

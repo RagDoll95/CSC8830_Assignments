@@ -1,0 +1,457 @@
+% CSc 8830 -- Computer Vision, Module 2
+% Steps 1-3 (calibration, measurement, validation) and the two-camera theory.
+%
+% Compiles with pdflatex (no external tools, no bibliography):
+%     pdflatex report.tex && pdflatex report.tex
+% Figures live in ./figures/ and are copies of the pipeline's own output.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+\usepackage{float}   % [H]: every table and figure stays where it is written
+
+\setlength{\emergencystretch}{3em}
+
+\newcommand{\px}{\,\mathrm{px}}
+\newcommand{\mm}{\,\mathrm{mm}}
+
+\title{Camera Calibration and Real-World Measurement\\
+       \large Module 2: Steps 1--3 and Theory}
+\author{Raghuveer Gummadi \\ \small CSc 8830: Computer Vision}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Code repository}
+
+\begin{center}
+\url{https://github.com/RagDoll95/CSC8830_Assignments}
+\end{center}
+
+\noindent
+All code, captured images and logged measurements are in that repository. The
+Module 2 code is under \texttt{week\_2/module2/} and the web application that
+demonstrates it is at the repository root under \texttt{app/}, started with
+\texttt{week\_2/.venv/bin/python app/app.py}. Its three Module 2 pages cover
+the calibration, the measurement itself (click two points on a photo taken at
+a known distance) and the logged measurements with their error statistics.
+
+\section{Step 1: Camera calibration}
+
+A smartphone camera was calibrated with OpenCV's built-in tools by
+\href{https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr98-71.pdf}%
+{Zhang's multi-plane method}. A $9 \times 6$ inner-corner checkerboard with a measured
+square size of $24.9\mm$ was photographed 24 times in varied orientations.
+Corners were located and refined to sub-pixel accuracy, and the camera model
+was then fitted with \texttt{cv2.calibrateCamera}, which minimises total
+reprojection error over the intrinsics, the distortion coefficients and the
+per-view pose. Focus, exposure and zoom were locked for the whole set, and
+every image was captured at the one resolution later used in Steps 2 and 3.
+
+The recovered camera matrix and distortion coefficients are
+
+\begin{equation}
+K =
+\begin{bmatrix}
+3336.69 & 0 & 1496.68 \\
+0 & 3335.58 & 2020.27 \\
+0 & 0 & 1
+\end{bmatrix},
+\qquad
+\mathbf{d} =
+\begin{bmatrix}
+0.2231 \\ -1.3758 \\ 0.00058 \\ -0.00081 \\ 2.7090
+\end{bmatrix},
+\end{equation}
+
+\noindent
+in the ordering $(k_1, k_2, p_1, p_2, k_3)$. Since $f$ and $c$ are in pixels,
+$K$ is valid only at the $3024 \times 4032$ resolution it was fitted at.
+Table~\ref{tab:calib} collects the fit and Figure~\ref{fig:overlays} shows the
+detected corners on the best- and worst-fitting views.
+
+\begin{table}[H]
+\centering
+\caption{Calibration summary.}
+\label{tab:calib}
+\begin{tabular}{lr}
+\toprule
+Quantity & Value \\
+\midrule
+Images used                        & 24 \\
+Pattern (inner corners)            & $9 \times 6$ \\
+Square size                        & $24.9\mm$ \\
+Resolution                         & $3024 \times 4032$ \\
+$f_x$                              & $3336.69\px$ \\
+$f_y$                              & $3335.58\px$ \\
+$c_x$                              & $1496.68\px$ \\
+$c_y$                              & $2020.27\px$ \\
+$f_y/f_x$                          & $0.99967$ \\
+Overall RMS reprojection error     & $1.863\px$ \\
+Median per-image RMS               & $0.581\px$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.40\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/calib_best.jpeg}
+  \caption{\texttt{IMG\_3913}, RMS $0.364\px$.}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.40\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/calib_worst.jpeg}
+  \caption{\texttt{IMG\_3921}, RMS $7.475\px$.}
+\end{subfigure}
+\caption{Detected corner overlays for the two of the 24 calibration
+views}
+\label{fig:overlays}
+\end{figure}
+
+\section{Step 2: Real-world dimensions from perspective projection}
+
+Under the pinhole model a point $P = (X, Y, Z)$ in camera coordinates projects
+to
+
+\begin{equation}
+u = f_x \frac{X}{Z} + c_x, \qquad v = f_y \frac{Y}{Z} + c_y .
+\label{eq:forward}
+\end{equation}
+
+A single image cannot recover $P$, since every point on the ray through $(u,v)$
+maps to the same pixel. Supplying the object distance $Z$ independently removes
+that one unknown and makes Equation~\ref{eq:forward} invertible:
+
+\begin{equation}
+X = (u - c_x)\frac{Z}{f_x}, \qquad Y = (v - c_y)\frac{Z}{f_y} .
+\label{eq:backproject}
+\end{equation}
+
+A dimension between two selected points $p_1$ and $p_2$ lying on a common plane
+at depth $Z$ is then the Euclidean distance between their backprojections,
+
+\begin{equation}
+L = \lVert P_2 - P_1 \rVert
+  = Z \sqrt{ \left(\frac{\Delta u}{f_x}\right)^{\!2}
+           + \left(\frac{\Delta v}{f_y}\right)^{\!2} } ,
+\label{eq:length}
+\end{equation}
+
+\noindent
+which for each axis comes out to:
+
+\begin{equation}
+W = \Delta u \frac{Z}{f_x}, \qquad H = \Delta v \frac{Z}{f_y} .
+\label{eq:wh}
+\end{equation}
+
+Width, height and diagonal therefore all come from Equation~\ref{eq:length} by
+one code path. Both endpoints must lie at the
+same depth $Z$, and lens distortion is
+removed from the two selected points only, with
+\texttt{cv2.undistortPoints}, which returns \emph{normalised} coordinates,
+already $X/Z$ and $Y/Z$, so the dimension is
+$Z \cdot \lVert \Delta(\text{normalised}) \rVert$ with no further division by
+$f_x$.
+
+Figure~\ref{fig:step2} Shows an example. The two selected
+points span $1069.7\px$ across the top edge of a laptop lid at a tape-measured
+$Z = 1000\mm$, with a checkerboard displayed on its screen, and
+Equation~\ref{eq:length} turns that span into $317.7\mm$ against a ruler truth
+of $356.0\mm$. It is entry 1 of the validation set in Step 3.
+
+\begin{figure}[H]
+\centering
+\includegraphics[trim=0 480 0 0,clip,width=0.62\textwidth]{figures/meas_board_1000mm.jpg}
+\caption{Step 2 on a single capture at $Z = 1000\mm$: the two selected points,
+the pixel span between them, and the dimension Equation~\ref{eq:length}
+returns for it.}
+\label{fig:step2}
+\end{figure}
+
+\section{Step 3: Validation experiment}
+
+Twenty object measurements were validated against ruler ground truth. Ground
+truth was recorded \emph{before} imaging. Both the object and the measured
+dimension were varied: 15 diagonals and 5 widths, over ground-truth sizes from
+$77$ to $413\mm$. Nineteen measurements were taken at a nominal
+$Z = 2000\mm$, satisfying the requirement that the object be at least
+$2$ metres from the camera, and one at $Z = 1000\mm$. Each row stores the two
+full-resolution pixel coordinates alongside the result, so every logged value
+can be re-derived from its pixels; doing so reproduces the table to within
+$0.005\mm$. Figure~\ref{fig:meas} shows two of the
+annotated measurements, Table~\ref{tab:meas} lists all twenty, and
+Table~\ref{tab:stats} and Figure~\ref{fig:diagnostics} report the error
+statistics over them.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.47\textwidth}
+  \centering
+  \includegraphics[trim=0 420 0 70,clip,width=\textwidth]{figures/meas_air_filter.jpg}
+  \caption{Air filter, $W$: measured $311.8\mm$ against $356.0\mm$.}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.47\textwidth}
+  \centering
+  \includegraphics[trim=0 420 0 70,clip,width=\textwidth]{figures/meas_candle.jpg}
+  \caption{Candle, $D$: measured $71.9\mm$ against $77.0\mm$.}
+\end{subfigure}
+\caption{Two of the 20 recorded measurements, at opposite ends of the size
+range.}
+\label{fig:meas}
+\end{figure}
+
+\begin{longtable}{rllrrrrr}
+\caption{The 20 validation measurements. Error is
+$\text{measured} - \text{truth}$.}
+\label{tab:meas} \\
+\toprule
+id & object & dim & $Z$ (mm) & truth (mm) & meas (mm) & err (mm) & err (\%) \\
+\midrule
+\endfirsthead
+\toprule
+id & object & dim & $Z$ (mm) & truth (mm) & meas (mm) & err (mm) & err (\%) \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1 & Mac & D & 1000 & 356.0 & 317.7 & -38.3 & -10.76 \\
+2 & Paperback book & D & 2000 & 210.0 & 198.7 & -11.3 & -5.40 \\
+3 & Water bottle & D & 2000 & 277.0 & 259.9 & -17.1 & -6.19 \\
+4 & Hydroflask & D & 2000 & 130.0 & 168.8 & +38.8 & +29.84 \\
+5 & Headphone case & W & 2000 & 150.0 & 149.4 & -0.6 & -0.41 \\
+7 & Game controller & D & 2000 & 150.0 & 120.9 & -29.1 & -19.41 \\
+8 & clothes hangar & D & 2000 & 413.0 & 360.3 & -52.7 & -12.75 \\
+9 & Hardback book & D & 2000 & 160.0 & 144.9 & -15.1 & -9.45 \\
+10 & Tissue box & D & 2000 & 231.0 & 227.3 & -3.7 & -1.60 \\
+11 & Candle & D & 2000 & 77.0 & 71.9 & -5.1 & -6.58 \\
+12 & clothing iron & D & 2000 & 299.0 & 265.1 & -33.9 & -11.32 \\
+13 & Climbing shoes & D & 2000 & 229.0 & 204.2 & -24.8 & -10.82 \\
+14 & Sketchbook & W & 2000 & 257.0 & 240.6 & -16.4 & -6.38 \\
+15 & Duct Tape & D & 2000 & 146.0 & 127.0 & -19.0 & -13.02 \\
+16 & Glasses case & D & 2000 & 169.0 & 143.9 & -25.1 & -14.82 \\
+18 & Power supply unit & W & 2000 & 168.0 & 155.3 & -12.7 & -7.54 \\
+19 & Air filter & W & 2000 & 356.0 & 311.8 & -44.2 & -12.42 \\
+20 & Mouse & W & 2000 & 112.0 & 95.6 & -16.4 & -14.63 \\
+21 & tennis racket & D & 2000 & 387.0 & 340.2 & -46.8 & -12.08 \\
+22 & paperback book 2 & D & 2000 & 200.0 & 180.7 & -19.3 & -9.66 \\
+\end{longtable}
+
+\begin{table}[H]
+\centering
+\caption{Error statistics over the 20 measurements.}
+\label{tab:stats}
+\begin{tabular}{lr}
+\toprule
+Statistic & Value \\
+\midrule
+Measurements, $n$                       & 20 \\
+Ground-truth size range                 & $77.0$--$413.0\mm$ \\
+Distance range                          & $1000$--$2000\mm$ \\
+\midrule
+Mean signed error (bias)                & $-19.636\mm$ \\
+Standard deviation of error             & $19.914\mm$ \\
+MAE                                     & $23.515\mm$ \\
+RMSE                                    & $27.610\mm$ \\
+\midrule
+Mean signed percent error               & $-7.771\%$ \\
+MAPE                                    & $10.755\%$ \\
+Std.\ deviation of percent error        & $9.948\%$ \\
+\midrule
+Most negative error                     & $-52.670\mm$ (id 8) \\
+Most positive error                     & $+38.790\mm$ (id 4) \\
+Standard error of the mean              & $4.453\mm$ \\
+$95\%$ CI on mean signed error          & $[-28.364, -10.908]\mm$ \\
+\midrule
+$\mathrm{corr}(\text{size}, \text{signed error})$  & $-0.721$ \\
+$\mathrm{corr}(Z, \text{percent error})$           & $+0.071$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/error_vs_size.png}
+  \caption{Error against ground-truth size, in millimetres and in percent.}
+\end{subfigure}
+
+\vspace{0.9em}
+\begin{subfigure}[t]{\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/error_vs_Z.png}
+  \caption{Error against object distance; all but one measurement was taken at
+  $Z = 2000\mm$.}
+\end{subfigure}
+
+\vspace{0.9em}
+\begin{subfigure}[t]{0.62\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{figures/error_distribution.png}
+  \caption{Distribution of percent error.}
+\end{subfigure}
+\caption{Error statistics of the 20 validation measurements.}
+\label{fig:diagnostics}
+\end{figure}
+
+\section{Theory: relating the image of a point in two cameras}
+
+Camera 1 is static; camera 2 sits at some distance from it and at an oblique
+orientation. A point $P = (X, Y, Z)$ lies in the field of view of both. What
+follows relates $x_1$, the image of $P$ in camera 1, to $x_2$, its image in
+camera 2. Once the assumptions below are in place, the relationship is one
+substitution.
+
+\subsection{Assumptions}
+
+\begin{enumerate}
+  \item \textbf{Ideal pinhole projection.} Both images are undistorted first,
+        using the distortion coefficients from Step 1. After correction the
+        residual departure from an ideal pinhole is below the
+        corner-localisation noise, so modelling it further would add
+        parameters without reducing error.
+  \item \textbf{Both cameras are calibrated.} $K_1$ and $K_2$ are known from a
+        Zhang calibration as in Step 1. If one phone captures both views, as
+        it does here, then $K_1 = K_2 = K$ and half the unknown intrinsics
+        disappear.
+  \item \textbf{Zero skew, square pixels.} The Step 1 fit gives $f_y/f_x$
+        within $0.03\%$ of unity and CMOS pixel axes are orthogonal by
+        construction, so the skew term in $K$ is set to zero rather than
+        estimated.
+  \item \textbf{Rigid relative pose.} $R$ and $\mathbf{t}$ are constant for the
+        pair of exposures. With one phone moved by hand they describe those two
+        exposures and nothing else.
+  \item \textbf{World frame anchored to camera 1.} Camera 1's
+        extrinsics become $[\,I \mid \mathbf{0}\,]$, so $P$ in the world frame
+        is also $P$ in camera 1's frame.
+\end{enumerate}
+
+\subsection{The derivation}
+
+With the world frame on camera 1, the two projections are
+
+\begin{equation}
+x_1 = K_1 P,
+\qquad
+x_2 = K_2 (R P + \mathbf{t}),
+\label{eq:twoproj}
+\end{equation}
+
+\noindent
+where $x_1 = (u_1, v_1, 1)^{\!\top}$ and $x_2 = (u_2, v_2, 1)^{\!\top}$ are the
+image points, $R$ is camera 2's rotation relative to camera 1, a proper 3D
+rotation with $R^{-1} = R^{\!\top}$, and $\mathbf{t} = -R\tilde{C}$ with
+$\tilde{C}$ the centre of camera
+2 expressed in camera 1's frame. ``Oblique orientation'' is the statement
+$R \neq I$, and ``at some distance'' is $\mathbf{t} \neq \mathbf{0}$.
+
+Only the first of the two has to be inverted, and Step 2 already did it. The
+intrinsic matrix is upper triangular, so its inverse is immediate,
+
+\begin{equation}
+K_1 =
+\begin{bmatrix}
+f_{x1} & 0 & c_{x1} \\ 0 & f_{y1} & c_{y1} \\ 0 & 0 & 1
+\end{bmatrix},
+\qquad
+K_1^{-1} =
+\begin{bmatrix}
+1/f_{x1} & 0 & -c_{x1}/f_{x1} \\
+0 & 1/f_{y1} & -c_{y1}/f_{y1} \\
+0 & 0 & 1
+\end{bmatrix},
+\label{eq:kinv}
+\end{equation}
+
+\noindent
+and applying it to $x_1$ strips the intrinsics off the measured pixel:
+
+\begin{equation}
+K_1^{-1} x_1 =
+\begin{pmatrix}
+(u_1 - c_{x1})/f_{x1} \\ (v_1 - c_{y1})/f_{y1} \\ 1
+\end{pmatrix}
+=
+\begin{pmatrix} X/Z \\ Y/Z \\ 1 \end{pmatrix},
+\qquad\text{so}\qquad
+P = Z\,K_1^{-1} x_1 .
+\label{eq:invert}
+\end{equation}
+
+The middle step is Equation~\ref{eq:backproject} written as a vector: $x_1$
+fixes the direction of the ray on which $P$ lies, and the scalar $Z$ says how
+far along that ray $P$ sits. Substituting this $P$ into camera 2's projection
+is then the whole derivation,
+
+\begin{align}
+x_2 &= K_2 (R P + \mathbf{t}) \notag \\
+    &= K_2 \bigl( R \,(Z\,K_1^{-1} x_1) + \mathbf{t} \bigr)
+       &&\text{(substitute $P$)} \notag \\
+    &= Z\,K_2 R K_1^{-1} x_1 + K_2 \mathbf{t}
+       &&\text{($R$, $K_2$ are linear; $Z$ is a scalar)} \notag \\
+    &= Z \left( K_2 R K_1^{-1} x_1 + \frac{1}{Z}\,K_2 \mathbf{t} \right)
+       &&\text{(factor out $Z$).}
+\label{eq:chain}
+\end{align}
+
+That leading $Z$ multiplies every entry of the bracket, including the third, so
+it divides straight back out when the pixels are read off and can be dropped.
+What is left is the relationship between the two images of $P$:
+
+\begin{equation}
+\boxed{\;
+x_2 \;=\; K_2 R K_1^{-1}\, x_1 \;+\; \frac{1}{Z}\,K_2 \mathbf{t} \;}
+\label{eq:main}
+\end{equation}
+
+The image of $P$ in camera 2 is therefore $x_1$ warped by the rotation and the
+two sets of intrinsics, then displaced by an amount inversely proportional to
+the depth of $P$. That depth is the only per-point quantity in the relation;
+everything else is fixed for the pair of cameras.
+
+\subsection{Parameters and variables}
+
+\begin{table}[H]
+\caption{The static parameters and the per-point variables in
+Equation~\eqref{eq:main}, and how each is obtained.}
+\label{tab:params}
+\small
+\begin{tabularx}{\textwidth}{@{}llLL@{}}
+\toprule
+Symbol & Type & Meaning & How obtained \\
+\midrule
+$K_1, K_2$ & static & Intrinsic matrix of each camera & Zhang calibration,
+Step 1. Equal if one phone takes both views. \\
+$R$ & static & Relative rotation, camera 1 $\to$ camera 2 &
+\texttt{cv2.stereoCalibrate} with the board visible in both views, or from
+point correspondences. \\
+$\mathbf{t}$ & static & Relative translation, $\mathbf{t} = -R\tilde{C}$ & As
+for $R$. From correspondences alone it is direction-only; metric scale needs
+one known length. \\
+$x_1, x_2$ & variable & Image coordinates of $P$ in each view & Measured:
+feature detection and matching, or manual selection. \\
+$P = (X,Y,Z)$ & variable & The scene point & Unknown; recovered by
+triangulating $x_1$ and $x_2$ once $R$ and $\mathbf{t}$ are known. \\
+$Z$ & variable & Depth of $P$ in camera 1's frame & Triangulated from the two
+views, or measured with a tape as in Step 3. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\end{document}

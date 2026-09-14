@@ -1,0 +1,12 @@
+# Virtual environments (the venv for this module lives at week_2/.venv)
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS
+.DS_Store

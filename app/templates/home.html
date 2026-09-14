@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}CSc 8830 &mdash; Assignments{% endblock %}
+
+{% block content %}
+<h1>CSc 8830 &mdash; Computer Vision</h1>
+
+<div class="cards">
+  {% for card in cards %}
+  <a class="card" href="{{ url_for(card.assignment.index_endpoint) }}">
+    <span class="tag">Module {{ card.assignment.number }}</span>
+    <strong>{{ card.assignment.title }}</strong>
+    <span class="desc">{{ card.assignment.summary }}</span>
+    {% if card.assignment.parts %}
+    <span class="desc small muted">{{ card.assignment.parts|join(" &middot; ")|safe }}</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{% if broken %}
+<div class="warn">
+  <strong>Registered but not mounted.</strong>
+  <ul class="small">
+    {% for assignment, why in broken %}
+    <li><code class="inline">{{ assignment.path }}</code> &mdash; {{ why }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if pending %}
+<div class="panel">
+  <h2>In the repository, with no pages yet</h2>
+  <ul class="small">
+    {% for week, folder, rel in pending %}
+    <li><code class="inline">{{ rel }}</code></li>
+    {% endfor %}
+  </ul>
+  <p class="small muted">
+    No entry in <code class="inline">app/assignments.py</code> claims these. Listed
+    rather than hidden, so a half-finished week is obvious instead of invisible.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

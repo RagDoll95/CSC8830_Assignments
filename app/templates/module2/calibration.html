@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Module 2 &mdash; Calibration{% endblock %}
+
+{% block content %}
+<h1>Calibration</h1>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if rejected %}
+<div class="warn small">
+  <strong>Rejected:</strong>
+  {% for name, why in rejected %}{{ name }} ({{ why }}){% if not loop.last %}; {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="panel">
+    <h2>Fit</h2>
+    <form method="post" enctype="multipart/form-data">
+      <label for="images">Checkerboard photos</label>
+      <input type="file" id="images" name="images" accept="image/*" multiple required>
+
+      <label for="pattern">Inner corners, cols&times;rows</label>
+      <input type="text" id="pattern" name="pattern" value="{{ pattern_default }}">
+
+      <label for="square_size">Square size (mm)</label>
+      <input type="number" id="square_size" name="square_size" step="0.01" min="0.01"
+             value="{{ square_default }}">
+
+      <button type="submit">Detect corners and fit</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Loaded camera</h2>
+    {% if cam %}
+      <dl class="kv">
+        <dt>f<sub>x</sub>, f<sub>y</sub></dt><dd>{{ "%.3f"|format(cam.fx) }}, {{ "%.3f"|format(cam.fy) }} px</dd>
+        <dt>c<sub>x</sub>, c<sub>y</sub></dt><dd>{{ "%.3f"|format(cam.cx) }}, {{ "%.3f"|format(cam.cy) }} px</dd>
+        <dt>resolution</dt><dd>{{ cam.width }} &times; {{ cam.height }}</dd>
+        <dt>RMS</dt><dd>{{ "%.4f"|format(cam.rms) }} px</dd>
+        <dt>images</dt><dd>{{ cam.image_count or "&mdash;"|safe }}</dd>
+        <dt>square size</dt><dd>{{ cam.square_size_mm }} mm</dd>
+      </dl>
+      <div class="math">K = [ {{ "%9.3f"|format(cam.fx) }}   0.000  {{ "%9.3f"|format(cam.cx) }} ]
+    [    0.000  {{ "%9.3f"|format(cam.fy) }}  {{ "%9.3f"|format(cam.cy) }} ]
+    [    0.000     0.000      1.000 ]
+
+dist = [{% for d in cam.dist.ravel().tolist() %}{{ "%+.6f"|format(d) }} {% endfor %}]</div>
+      <a class="btn secondary" href="{{ url_for('module2.download_params') }}">Download camera_params.yaml</a>
+      <p class="small muted" style="margin-top:10px">
+        <code class="inline">{{ params_path }}</code>
+      </p>
+    {% else %}
+      <div class="warn">{{ cam_error }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if result %}
+<div class="panel">
+  <h2>Fit result</h2>
+  <div class="readout">
+    <div class="stat">
+      <div class="label">RMS reprojection error</div>
+      <div class="value">{{ "%.4f"|format(result.rms) }} <small>px</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">Images accepted</div>
+      <div class="value">{{ result.accepted }}<small> / {{ result.uploaded }}</small></div>
+    </div>
+    <div class="stat">
+      <div class="label">Resolution</div>
+      <div class="value" style="font-size:17px">{{ result.image_size[0] }}&times;{{ result.image_size[1] }}</div>
+    </div>
+  </div>
+
+  {% if result.skipped %}
+    <div class="warn small">Ignored non-image files: {{ result.skipped|join(", ") }}</div>
+  {% endif %}
+  {% if result.rejected %}
+    <div class="warn small">
+      <strong>Rejected:</strong>
+      {% for name, why in result.rejected %}{{ name }} ({{ why }}){% if not loop.last %}; {% endif %}{% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="grid2">
+    <table>
+      <tbody>
+      {% for label, ok in result.checks %}
+        <tr>
+          <td>{{ label }}</td>
+          <td style="width:90px">
+            <span class="pill {{ 'pass' if ok else 'fail' }}">{{ 'PASS' if ok else 'CHECK' }}</span>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="scroll" style="max-height:260px">
+      <table>
+        <thead><tr><th>image</th><th class="num">RMS (px)</th></tr></thead>
+        <tbody>
+        {% for name, err in result.errors %}
+          <tr><td>{{ name }}</td><td class="num">{{ "%.4f"|format(err) }}</td></tr>
+        {% endfor %}
+          <tr><td><strong>mean</strong></td>
+              <td class="num"><strong>{{ "%.4f"|format(result.mean_error) }}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p style="margin-top:4px">
+    <a class="btn" href="{{ url_for('module2.measure') }}">Go to Measure &rarr;</a>
+  </p>
+</div>
+{% endif %}
+
+{% if overlays %}
+<div class="panel">
+  <h2>Detected corners</h2>
+  <div class="thumbs">
+    {% for name in overlays %}
+    <figure>
+      <img src="{{ url_for('module2.overlay_image', name=name) }}" alt="{{ name }}">
+      <figcaption>{{ name }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
