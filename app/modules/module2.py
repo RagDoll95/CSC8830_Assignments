@@ -10,21 +10,13 @@ THREE PAGES, ONE PER THING YOU ACTUALLY DO
     written deliverable, not something done in a browser, so it lives in
     theory/two_camera_derivation.md and goes into the PDF from there.
 
-UPLOADS REPLACE THE SYNTHETIC DATA, PERMANENTLY
-    The assignment ships rendered `synthetic_*` stand-in data so the pipeline
-    can be scored before any real photo exists. Uploading real photos deletes
-    it from disk rather than hiding it -- see app/dataset.py for why -- so it
-    cannot reappear on screen later in a presentation. Two independent
-    triggers, because the two datasets are independent:
-
-        board photos on Calibration -> calibration/data/images, the corner
-            overlays and synthetic_ground_truth.yaml are replaced
-        a photo on Measure          -> validation/data/images, the synthetic
-            measurements.csv and the plots derived from it are replaced
-
-    Calibration swaps only after the fit succeeds (app/dataset.py stage/install),
-    so a batch the corner detector rejects leaves the previous data intact
-    instead of emptying the page.
+AN UPLOAD IS THE DATASET, NOT AN ADDITION TO IT
+    Uploading board photos on Calibration replaces calibration/data/images and
+    the corner overlays wholesale, and only after the fit succeeds
+    (app/dataset.py stage/install) -- so a batch the corner detector rejects
+    leaves the previous data intact instead of emptying the page. Measurement
+    photos accumulate in validation/data/images instead, because a measurement
+    run is built up one object at a time.
 
 ONE CAMERA FILE, NOT AN ACTIVE-PARAMS POINTER
     calibration/output/camera_params.yaml is the calibration, for this blueprint
@@ -58,8 +50,8 @@ REPORT FIGURES
 NO GEOMETRY LIVES IN THIS FILE
     Every number comes from week_2/module2/measurement/geometry.py,
     .../calibration/calibrate.py and .../validation/analyze.py -- the same code
-    the CLI runs -- so the web app and the CLI cannot disagree.
-    week_2/module2/tools/verify_pipeline.py asserts that they do not.
+    the CLI runs -- so the web app and the CLI cannot disagree. A blueprint that
+    recomputes something itself is a bug here even when it agrees.
 """
 
 import csv
@@ -79,8 +71,6 @@ from werkzeug.utils import secure_filename
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(HERE)
 if APP_DIR not in sys.path:
-    # Also lets week_2/module2/tools/verify_pipeline.py import this module
-    # directly to check the click scaling against the CLI.
     sys.path.insert(0, APP_DIR)
 
 import dataset  # noqa: E402
@@ -106,13 +96,12 @@ def _m(*parts):
     return os.path.join(MODULE, *parts)
 
 
-# The assignment's own folders. Uploads land in these, which is what makes the
-# replacement of the synthetic data persist across restarts.
+# The assignment's own folders. Uploads land in these, which is what makes a
+# replacement persist across restarts.
 BOARD_IMAGES = _m("calibration", "data", "images")
 BOARD_DEBUG = _m("calibration", "output", "debug")
 PARAMS = _m("calibration", "output", "camera_params.yaml")
 BOARD_ERROR_CSV = _m("calibration", "output", "reprojection_errors.csv")
-BOARD_SYNTH_TRUTH = _m("calibration", "data", "synthetic_ground_truth.yaml")
 
 MEAS_IMAGES = _m("validation", "data", "images")
 RECORDS_CSV = _m("validation", "data", "measurements.csv")
@@ -121,17 +110,6 @@ FIGURES = _m("validation", "output", "figures")
 STATS_TXT = _m("validation", "output", "statistics.txt")
 AUGMENTED_CSV = _m("validation", "output", "measurements_with_errors.csv")
 
-# Derived from the synthetic CSV, so they go when it does. Named explicitly
-# because nothing about "error_vs_size.png" reveals what produced it.
-SYNTH_DERIVED = (
-    _m("validation", "data", "synthetic_truth.csv"),
-    _m("validation", "data", "measurements_bias_only.csv"),
-    _m("validation", "output", "error_vs_size.png"),
-    _m("validation", "output", "error_vs_Z.png"),
-    _m("validation", "output", "error_distribution.png"),
-    STATS_TXT,
-    AUGMENTED_CSV,
-)
 PLOT_NAMES = ("error_vs_size.png", "error_vs_Z.png", "error_distribution.png")
 
 # Session scratch: staging for a calibration fit, and the annotated preview
@@ -164,8 +142,8 @@ NAV = [
 
 
 # --------------------------------------------------------------------------
-# The section-25 fix. Kept module-level and tiny so verify_pipeline.py can
-# import and test it directly against the CLI.
+# The section-25 fix. Kept module-level and tiny so it can be imported and
+# exercised on its own rather than only through a request.
 # --------------------------------------------------------------------------
 def scale_click(x_disp, y_disp, disp_w, disp_h, nat_w, nat_h):
     """Canvas/display coordinates -> full-resolution image coordinates.
@@ -204,18 +182,6 @@ def safe_name(name):
     return clean
 
 
-def capture_name(name):
-    """safe_name(), plus a guarantee the result is not mistaken for a render.
-
-    purge_synthetic() deletes by the synthetic_* naming convention, so a real
-    upload that happened to be called synthetic_board.jpg would be deleted by
-    the *next* upload as if it had been rendered. Renaming on the way in keeps
-    that convention meaning exactly one thing.
-    """
-    clean = safe_name(name)
-    return "capture_" + clean if dataset.is_synthetic(clean) else clean
-
-
 # --------------------------------------------------------------------------
 # The records CSV -- the one file the Measure and Records pages share
 # --------------------------------------------------------------------------
@@ -244,32 +210,6 @@ def next_record_id(rows):
         except (KeyError, TypeError, ValueError):
             continue
     return max(used) + 1 if used else 1
-
-
-def synthetic_records(rows):
-    """True if every row references a rendered image -- i.e. the shipped CSV.
-
-    Checked by provenance rather than by a flag: the rows themselves name the
-    images they came from, so a CSV that is half real is left alone.
-    """
-    return bool(rows) and all(
-        dataset.is_synthetic(r.get("image_file", "")) for r in rows)
-
-
-def adopt_real_measurements():
-    """First real measurement photo: drop the synthetic measurement dataset.
-
-    The rendered sample photos, the CSV logged against them, and every
-    statistic and plot derived from that CSV. Returns what was removed so the
-    page can say so.
-    """
-    removed = dataset.purge_synthetic(MEAS_IMAGES)
-    removed += dataset.remove(*SYNTH_DERIVED)
-    if synthetic_records(read_records()):
-        removed += dataset.remove(RECORDS_CSV)
-    if os.path.isdir(FIGURES):
-        removed += dataset.purge_synthetic(FIGURES)
-    return removed
 
 
 def figure_name(row):
@@ -344,8 +284,6 @@ def index():
         "params_path": os.path.relpath(PARAMS, REPO_ROOT),
         "board_images": listdir_images(BOARD_IMAGES),
         "overlays": listdir_images(BOARD_DEBUG)[:12],
-        "synthetic": any(dataset.is_synthetic(n)
-                         for n in listdir_images(BOARD_IMAGES)),
         "pattern_default": "%dx%d" % calib.PATTERN_SIZE,
         "square_default": calib.SQUARE_SIZE_MM,
         "params_exist": os.path.exists(PARAMS),
@@ -378,7 +316,7 @@ def index():
 
     saved, skipped = [], []
     for f in files:
-        name = capture_name(f.filename)
+        name = safe_name(f.filename)
         if not allowed_image(name):
             skipped.append(name)
             continue
@@ -410,14 +348,10 @@ def index():
         objpoints, imgpoints, image_size, None, None)
     errors = calib.per_image_errors(objpoints, imgpoints, rvecs, tvecs, K, dist)
 
-    # The fit is good: the uploaded boards become the dataset. The synthetic
-    # ground truth goes with them -- it describes the renders, not these
-    # photos, and tools/verify_pipeline.py --regen rewrites it on demand.
-    replaced = [n for n in listdir_images(BOARD_IMAGES) if dataset.is_synthetic(n)]
+    # The fit is good: the uploaded boards become the dataset.
     dataset.install(staged_images, BOARD_IMAGES)
     if os.path.isdir(staged_debug):
         dataset.install(staged_debug, BOARD_DEBUG)
-    dataset.remove(BOARD_SYNTH_TRUTH)
     dataset.discard(staging)
 
     calib.save_params(PARAMS, K, dist, image_size, pattern_size, square, rms,
@@ -436,14 +370,12 @@ def index():
         "params_exist": True,
         "board_images": listdir_images(BOARD_IMAGES),
         "overlays": listdir_images(BOARD_DEBUG)[:12],
-        "synthetic": False,
         "result": {
             "rms": float(rms),
             "accepted": len(accepted),
             "uploaded": len(saved),
             "image_size": image_size,
             "skipped": skipped,
-            "replaced": replaced,
             "rejected": [(os.path.basename(p), why) for p, why in rejected],
             "errors": [(os.path.basename(accepted[i]), float(errors[i]))
                        for i in order],
@@ -483,7 +415,6 @@ def measure_context():
         "cam": cam, "cam_error": err,
         "params_path": os.path.relpath(PARAMS, REPO_ROOT),
         "images": images,
-        "synthetic": any(dataset.is_synthetic(n) for n in images),
         "dimensions": DIMENSIONS,
         "image_name": None, "nat_w": None, "nat_h": None,
         "z_default": "2400", "allow_scaling": False,
@@ -506,17 +437,14 @@ def measure():
         # upload of anyone who measures two photos in a row.
         f = request.files.get("image")
         if f and f.filename:
-            name = capture_name(f.filename)
+            name = safe_name(f.filename)
             if not allowed_image(name):
                 context["error"] = "Not an image file."
                 return render_template("module2/measure.html", **context), 400
-            # A real photo has landed: the rendered stand-ins go for good.
-            removed = adopt_real_measurements()
             os.makedirs(MEAS_IMAGES, exist_ok=True)
             f.save(os.path.join(MEAS_IMAGES, name))
             return redirect(url_for(".measure", image=name, Z=Z,
-                                    scale=1 if scaling else None,
-                                    purged=len(removed) or None))
+                                    scale=1 if scaling else None))
 
         name = request.form.get("existing")
         if not name:
@@ -528,7 +456,6 @@ def measure():
     context["z_default"] = request.args.get("Z") or "2400"
     context["allow_scaling"] = bool(request.args.get("scale"))
     context["recorded"] = request.args.get("recorded")
-    context["purged"] = request.args.get("purged")
 
     name = request.args.get("image")
     if not name:
@@ -769,8 +696,6 @@ def records():
     }
 
     if request.method == "POST":
-        # Replacing the log from a CSV is itself real data arriving, so the
-        # synthetic measurement dataset goes with it.
         f = request.files.get("csv")
         if not f or not f.filename:
             context["error"] = "No CSV selected."
@@ -787,13 +712,11 @@ def records():
             context["error"] = ("CSV is missing column(s): %s"
                                 % ", ".join(missing))
             return render_template("module2/records.html", **context), 400
-        adopt_real_measurements()
         write_records(uploaded)
         refresh_outputs(uploaded)
         return redirect(url_for(".records"))
 
     rows = read_records()
-    context["synthetic"] = synthetic_records(rows)
 
     if not rows:
         context["empty"] = True

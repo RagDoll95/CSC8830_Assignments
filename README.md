@@ -1,7 +1,7 @@
 # CSc 8830 — Computer Vision · weekly assignments
 
-One repository per course, one folder per week, and **one web application at the root
-that reaches every assignment**.
+Clone this repository, navigate to the root repo directory run
+the following lines to launch
 
 ```bash
 # from this folder
@@ -30,24 +30,13 @@ app/                     the web application (all assignments)
 week_2/module2/          Module 2's own code: calibration, measurement, validation, theory
 ```
 
-The application holds no computation of its own. Each assignment's pages import that
-assignment's own modules — `week_2/module2/measurement/geometry.py` and friends — so the
-web pages and the command-line tools run the same functions and cannot disagree;
-`week_2/module2/tools/verify_pipeline.py` asserts numerically that they don't.
-
 ## Adding next week's assignment
 
 1. Write the assignment under `week_N/moduleN/`, with its own CLI scripts.
 2. Add `app/modules/moduleN.py` exposing a Flask blueprint `bp` and a `NAV` list.
 3. Add one `Assignment(...)` entry to `app/assignments.py`.
 
-Nothing in `app/app.py` changes — it mounts whatever the registry names. A `week_*/module*`
-folder with no registry entry still shows up on the home page, listed as present in the
-repository but with no pages yet, so unfinished work is visible rather than invisible.
-
 ## Per-assignment documentation
 
 - [`week_2/module2/README.md`](week_2/module2/README.md) — method, results, layout, and the
   assignment-requirement map
-- [`week_2/module2/NEXT_STEPS.md`](week_2/module2/NEXT_STEPS.md) — the run sheet for
-  capturing real data and producing the submission

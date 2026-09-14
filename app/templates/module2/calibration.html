@@ -11,12 +11,6 @@
   {% for name, why in rejected %}{{ name }} ({{ why }}){% if not loop.last %}; {% endif %}{% endfor %}
 </div>
 {% endif %}
-{% if synthetic %}
-<div class="warn small">
-  The loaded board images are <strong>rendered, not photographed</strong>.
-  Uploading your own replaces them permanently.
-</div>
-{% endif %}
 
 <div class="grid2">
   <div class="panel">
@@ -80,12 +74,6 @@ dist = [{% for d in cam.dist.ravel().tolist() %}{{ "%+.6f"|format(d) }} {% endfo
     </div>
   </div>
 
-  {% if result.replaced %}
-  <div class="ok small">
-    Replaced {{ result.replaced|length }} rendered sample image(s) on disk. The
-    uploaded photos are the calibration dataset now.
-  </div>
-  {% endif %}
   {% if result.skipped %}
     <div class="warn small">Ignored non-image files: {{ result.skipped|join(", ") }}</div>
   {% endif %}

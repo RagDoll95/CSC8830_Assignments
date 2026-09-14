@@ -10,11 +10,6 @@
   <a href="{{ url_for('module2.records') }}">See all records &rarr;</a>
 </div>
 {% endif %}
-{% if purged %}
-<div class="ok small">
-  Replaced the rendered sample measurement data on disk ({{ purged }} file(s)).
-</div>
-{% endif %}
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 {% if cam_error %}
 <div class="err">{{ cam_error }}
@@ -23,12 +18,6 @@
 {% endif %}
 {% if resolution_error %}<div class="err"><strong>Refused.</strong> {{ resolution_error }}</div>{% endif %}
 {% if resolution_warning %}<div class="warn small">{{ resolution_warning }}</div>{% endif %}
-{% if synthetic %}
-<div class="warn small">
-  The listed photos are <strong>rendered, not photographed</strong>. Uploading your
-  own replaces them, and the records logged against them, permanently.
-</div>
-{% endif %}
 
 <div class="grid2">
   <div class="panel">
@@ -71,7 +60,6 @@
     {% else %}
     <div class="warn">No calibration loaded.</div>
     {% endif %}
-    <p class="small muted">{{ record_count }} measurement(s) recorded so far.</p>
   </div>
 </div>
 
@@ -137,7 +125,9 @@
       </form>
     </div>
 
-    <div class="grid2">
+    <details class="panel">
+      <summary><strong>Computation and error budget</strong></summary>
+      <div class="grid2" style="margin-top:12px">
       <div>
         <h3>Computation</h3>
         <table>
@@ -165,7 +155,8 @@
           </tbody>
         </table>
       </div>
-    </div>
+      </div>
+    </details>
 
     <h3>Annotated</h3>
     <img id="annotated" src="" alt="annotated result"

@@ -6,17 +6,10 @@
 
 {% if deleted %}<div class="ok small">Deleted record {{ deleted }}.</div>{% endif %}
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
-{% if synthetic %}
-<div class="warn small">
-  These rows were logged against <strong>rendered</strong> images. Recording your
-  first real measurement replaces them permanently.
-</div>
-{% endif %}
 {% if stale_calibration %}
 <div class="warn small">
-  The calibration was re-fitted after these rows were logged, so
-  <code class="inline">measured_mm</code> came from the older camera. Re-derive them
-  with <code class="inline">python validation/analyze.py --recompute</code>.
+  Calibration re-fitted after these rows were logged &mdash;
+  <code class="inline">python validation/analyze.py --recompute</code> to re-derive.
 </div>
 {% endif %}
 
@@ -33,79 +26,52 @@
 
   <div class="readout">
     <div class="stat">
-      <div class="label">Mean signed error &mdash; bias</div>
-      <div class="value">{{ "%+.3f"|format(stats.mean_signed_error_mm) }} <small>mm</small></div>
+      <div class="label">Mean signed error</div>
+      <div class="value">{{ "%+.2f"|format(stats.mean_signed_error_mm) }} <small>mm</small></div>
     </div>
     <div class="stat">
-      <div class="label">Std deviation &mdash; spread</div>
-      <div class="value">{{ "%.3f"|format(stats.std_error_mm) }} <small>mm</small></div>
+      <div class="label">Std deviation</div>
+      <div class="value">{{ "%.2f"|format(stats.std_error_mm) }} <small>mm</small></div>
     </div>
     <div class="stat">
       <div class="label">MAPE</div>
-      <div class="value">{{ "%.3f"|format(stats.mape_pct) }} <small>%</small></div>
+      <div class="value">{{ "%.2f"|format(stats.mape_pct) }} <small>%</small></div>
     </div>
   </div>
 
   <div class="grid2">
     <table>
       <tbody>
-        <tr><td>measurements, n</td><td class="num">{{ stats.n }}</td></tr>
-        <tr><td>mean signed error</td><td class="num">{{ "%+.3f"|format(stats.mean_signed_error_mm) }} mm</td></tr>
-        <tr><td>std deviation of error</td><td class="num">{{ "%.3f"|format(stats.std_error_mm) }} mm</td></tr>
-        <tr><td>MAE</td><td class="num">{{ "%.3f"|format(stats.mae_mm) }} mm</td></tr>
-        <tr><td>RMSE</td><td class="num">{{ "%.3f"|format(stats.rmse_mm) }} mm</td></tr>
+        <tr><td>n</td><td class="num">{{ stats.n }}</td></tr>
+        <tr><td>mean signed error</td><td class="num">{{ "%+.2f"|format(stats.mean_signed_error_mm) }} mm</td></tr>
+        <tr><td>std deviation</td><td class="num">{{ "%.2f"|format(stats.std_error_mm) }} mm</td></tr>
+        <tr><td>MAE</td><td class="num">{{ "%.2f"|format(stats.mae_mm) }} mm</td></tr>
+        <tr><td>RMSE</td><td class="num">{{ "%.2f"|format(stats.rmse_mm) }} mm</td></tr>
+        {% if stats.ci95_mm %}
+        <tr><td>95% CI on the mean</td>
+          <td class="num">[{{ "%+.2f"|format(stats.ci95_mm[0]) }}, {{ "%+.2f"|format(stats.ci95_mm[1]) }}] mm</td></tr>
+        {% endif %}
       </tbody>
     </table>
     <table>
       <tbody>
-        <tr><td>mean signed percent error</td><td class="num">{{ "%+.3f"|format(stats.mean_signed_pct) }} %</td></tr>
-        <tr><td>MAPE</td><td class="num">{{ "%.3f"|format(stats.mape_pct) }} %</td></tr>
-        <tr><td>std of percent error</td><td class="num">{{ "%.3f"|format(stats.std_pct) }} %</td></tr>
-        <tr><td>most negative error</td><td class="num">{{ "%+.3f"|format(stats.min_error_mm) }} mm</td></tr>
-        <tr><td>most positive error</td><td class="num">{{ "%+.3f"|format(stats.max_error_mm) }} mm</td></tr>
+        <tr><td>mean signed percent error</td><td class="num">{{ "%+.2f"|format(stats.mean_signed_pct) }} %</td></tr>
+        <tr><td>MAPE</td><td class="num">{{ "%.2f"|format(stats.mape_pct) }} %</td></tr>
+        <tr><td>std of percent error</td><td class="num">{{ "%.2f"|format(stats.std_pct) }} %</td></tr>
+        <tr><td>most negative error</td><td class="num">{{ "%+.2f"|format(stats.min_error_mm) }} mm</td></tr>
+        <tr><td>most positive error</td><td class="num">{{ "%+.2f"|format(stats.max_error_mm) }} mm</td></tr>
+        {% for label, value, _note in trends %}
+        <tr><td>{{ label }}</td><td class="num">{{ "%+.3f"|format(value) }}</td></tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>
 
   <p class="small muted">
-    Sizes span {{ "%.0f"|format(stats.gt_min_mm) }}&ndash;{{ "%.0f"|format(stats.gt_max_mm) }} mm;
-    distances {{ "%.0f"|format(stats.Z_min_mm) }}&ndash;{{ "%.0f"|format(stats.Z_max_mm) }} mm.
+    Sizes {{ "%.0f"|format(stats.gt_min_mm) }}&ndash;{{ "%.0f"|format(stats.gt_max_mm) }} mm;
+    Z {{ "%.0f"|format(stats.Z_min_mm) }}&ndash;{{ "%.0f"|format(stats.Z_max_mm) }} mm.
     Largest absolute error: {{ worst.object }} ({{ worst.dimension }}), id {{ worst.id }}.
   </p>
-
-  {% if stats.ci95_mm %}
-    {% if stats.bias_significant %}
-    <div class="warn small">
-      95% CI on the mean signed error is
-      [{{ "%+.3f"|format(stats.ci95_mm[0]) }}, {{ "%+.3f"|format(stats.ci95_mm[1]) }}] mm
-      &mdash; <strong>it excludes zero</strong>, so the bias is real rather than sampling
-      noise. The leading candidate is the Z reference origin: a tape measure starts at
-      the phone's back glass, while Z is defined from the optical centre inside the lens
-      stack. A residual focal-length error is the other candidate.
-    </div>
-    {% else %}
-    <div class="ok small">
-      95% CI on the mean signed error is
-      [{{ "%+.3f"|format(stats.ci95_mm[0]) }}, {{ "%+.3f"|format(stats.ci95_mm[1]) }}] mm
-      &mdash; <strong>it contains zero</strong>: no significant bias at this sample size,
-      the random term (click precision) dominates the systematic one.
-    </div>
-    {% endif %}
-  {% endif %}
-
-  {% if trends %}
-  <table>
-    <tbody>
-      {% for label, value, note in trends %}
-      <tr>
-        <td>{{ label }}</td>
-        <td class="num">{{ "%+.3f"|format(value) }}</td>
-        <td class="small muted">{{ note }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
 
   <h3>Per dimension</h3>
   <table>
@@ -116,9 +82,9 @@
       <tr>
         <td>{{ d.dim }}</td>
         <td class="num">{{ d.n }}</td>
-        <td class="num">{{ "%+.3f"|format(d.mean) }} mm</td>
-        <td class="num">{{ "%.3f"|format(d.std) }} mm</td>
-        <td class="num">{{ "%.3f"|format(d.mape) }} %</td>
+        <td class="num">{{ "%+.2f"|format(d.mean) }} mm</td>
+        <td class="num">{{ "%.2f"|format(d.std) }} mm</td>
+        <td class="num">{{ "%.2f"|format(d.mape) }} %</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -167,32 +133,6 @@
 </div>
 {% endif %}
 
-{% if figures %}
-<div class="panel">
-  <h2>Report figures</h2>
-  <p class="small muted">
-    Downscaled to {{ 1400 }} px on the long edge, annotated with the measurement and
-    the ground truth. The full-resolution originals stay in
-    <code class="inline">validation/data/images/</code>.
-  </p>
-  <p>
-    <a class="btn" href="{{ url_for('module2.figures_zip') }}">Download all as .zip</a>
-    <span class="small muted" style="margin-left:8px">figures, statistics.txt,
-      measurements.csv and the plots</span>
-  </p>
-  <div class="thumbs">
-    {% for name in figures %}
-    <figure>
-      <a href="{{ url_for('module2.report_figure', name=name) }}">
-        <img src="{{ url_for('module2.report_figure', name=name) }}" alt="{{ name }}">
-      </a>
-      <figcaption>{{ name }}</figcaption>
-    </figure>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
 {% if plots %}
 <div class="panel">
   <h2>Diagnostic plots</h2>
@@ -204,25 +144,39 @@
 {% endif %}
 
 <div class="panel">
-  <h2>The log</h2>
-  <p class="small muted"><code class="inline">{{ csv_path }}</code></p>
+  <h2>Downloads</h2>
   <p>
     {% if not empty %}
-    <a class="btn secondary" href="{{ url_for('module2.records_csv') }}">Download measurements.csv</a>
+    <a class="btn secondary" href="{{ url_for('module2.records_csv') }}">measurements.csv</a>
+    {% endif %}
+    {% if figures %}
+    <a class="btn" href="{{ url_for('module2.figures_zip') }}">Report figures .zip</a>
     {% endif %}
   </p>
+  <p class="small muted"><code class="inline">{{ csv_path }}</code></p>
   <form method="post" enctype="multipart/form-data">
     <label for="csv">Replace the log from a CSV</label>
     <input type="file" id="csv" name="csv" accept=".csv,text/csv">
     <button type="submit" class="secondary">Load</button>
   </form>
-  <p class="small muted" style="margin-top:10px">
-    Schema: <code class="inline">id, image_file, object, dimension, Z_mm,
-    ground_truth_mm, measured_mm, u1, v1, u2, v2</code>. The pixel coordinates are
-    stored so any row can be recomputed if the geometry or the calibration changes,
-    without reshooting.
-  </p>
 </div>
+
+{% if figures %}
+<details class="panel">
+  <summary><strong>Report figures</strong>
+    <span class="small muted">({{ figures|length }}, annotated at {{ 1400 }} px)</span></summary>
+  <div class="thumbs" style="margin-top:12px">
+    {% for name in figures %}
+    <figure>
+      <a href="{{ url_for('module2.report_figure', name=name) }}">
+        <img src="{{ url_for('module2.report_figure', name=name) }}" alt="{{ name }}">
+      </a>
+      <figcaption>{{ name }}</figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
 
 {% if report_text %}
 <details class="panel">
