@@ -173,33 +173,6 @@
   </div>
 </div>
 {% endif %}
-
-<details class="panel">
-  <summary><strong>Method</strong> <span class="small muted">the inverted projection, and what bounds it</span></summary>
-  <div class="math">u = f_x &middot; X/Z + c_x        v = f_y &middot; Y/Z + c_y        (forward)
-
-X = (u &minus; c_x) &middot; Z / f_x    Y = (v &minus; c_y) &middot; Z / f_y    (inverted at known Z)</div>
-  <p class="small">
-    Clicks are converted from canvas to full-resolution image coordinates
-    server-side, undistorted with <code class="inline">cv2.undistortPoints</code>,
-    then backprojected to 3D at depth Z; a dimension is the Euclidean distance
-    between two backprojections. For an axis-aligned span this collapses to
-    <code class="inline">W = &Delta;u &middot; Z / f_x</code>, so the relative
-    errors add: &delta;W/W &asymp; &delta;(&Delta;u)/&Delta;u + &delta;Z/Z +
-    &delta;f<sub>x</sub>/f<sub>x</sub>. Larger objects measure better because a
-    bigger &Delta;u shrinks the click term.
-  </p>
-  <p class="small">
-    Z dominates in practice. Measure to the camera's optical centre, not the
-    phone's back glass &mdash; 5&ndash;10 mm of difference is a systematic bias on
-    every measurement &mdash; and keep the object centred, or the straight-line
-    distance is Z/cos&thinsp;&theta; rather than Z. The method assumes the measured
-    face is fronto-parallel at a single depth; tilt or object thickness violates
-    that, and no single Z makes it exact. A second view removes the dependence on Z
-    entirely by triangulation, derived in
-    <code class="inline">week_2/module2/theory/two_camera_derivation.md</code>.
-  </p>
-</details>
 {% endblock %}
 
 {% block scripts %}

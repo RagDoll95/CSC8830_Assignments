@@ -142,27 +142,4 @@ dist = [{% for d in cam.dist.ravel().tolist() %}{{ "%+.6f"|format(d) }} {% endfo
   </div>
 </div>
 {% endif %}
-
-<details class="panel">
-  <summary><strong>Method</strong> <span class="small muted">Zhang, and why not a DLT fit</span></summary>
-  <p class="small" style="margin-top:12px">
-    Corners are refined to subpixel accuracy with <code class="inline">cornerSubPix</code>
-    and fitted with <code class="inline">cv2.calibrateCamera</code>, OpenCV's
-    implementation of Zhang's multi-plane method.
-  </p>
-  <p class="small">
-    A direct linear transform on a single calibration object recovers a projection
-    matrix, but it does not model radial distortion, cannot impose constraints such
-    as a known focal length or zero skew, and minimises an algebraic residual rather
-    than the geometrically meaningful reprojection error. Zhang's method observes one
-    planar target in many orientations, which both supplies the constraints needed to
-    separate the intrinsics from the per-view extrinsics and lets the distortion
-    coefficients be estimated &mdash; then refines everything by nonlinear least
-    squares on reprojection error, which is the RMS reported above.
-  </p>
-  <p class="small">
-    K is in pixels, so it is only valid at the resolution it was fitted at: every
-    image must share one resolution, and measurements must use that same resolution.
-  </p>
-</details>
 {% endblock %}
