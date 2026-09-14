@@ -4,20 +4,20 @@ camera_matrix: !!opencv-matrix
    rows: 3
    cols: 3
    dt: d
-   data: [ 1600.2904239211352, 0., 1007.2583871185396, 0.,
-       1601.0764835276357, 755.68549114857979, 0., 0., 1. ]
+   data: [ 3336.6869603217165, 0., 1496.6789465006436, 0.,
+       3335.5791816588944, 2020.2716637910894, 0., 0., 1. ]
 distortion_coefficients: !!opencv-matrix
    rows: 1
    cols: 5
    dt: d
-   data: [ 0.08044136735779138, -0.16231180784179972,
-       0.00077123757904077738, -0.00051721406025930525,
-       0.053065016989455871 ]
-image_width: 2016
-image_height: 1512
-square_size_mm: 25.
+   data: [ 0.22313707234508132, -1.3757579065756262,
+       0.00058294793109492783, -0.00081168335087175917,
+       2.7090077199933376 ]
+image_width: 3024
+image_height: 4032
+square_size_mm: 24.899999999999999
 pattern_cols: 9
 pattern_rows: 6
-rms_reprojection_error_px: 0.058199234179378001
-image_count: 18
-notes: "SYNTHETIC render, 2016x1512, tools/make_synthetic_data.py"
+rms_reprojection_error_px: 1.8628730944718315
+image_count: 24
+notes: fitted via the web app

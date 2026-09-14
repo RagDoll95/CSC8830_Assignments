@@ -4,58 +4,58 @@ STEP 3 -- VALIDATION OVER 20 MEASUREMENTS
 
   id  object             dim     Z (mm)  truth (mm)   meas (mm)  err (mm)  err (%)
   --------------------------------------------------------------------------------------------
-  1   hardback book      H       2139.4      240.00      242.52     +2.52    +1.05
-  2   hardback book      W       2471.1      155.00      157.44     +2.44    +1.57
-  3   laptop lid         W       2313.9      358.00      358.30     +0.30    +0.08
-  4   laptop lid         D       2905.6      434.94      434.52     -0.42    -0.10
-  5   A4 sheet           H       2232.8      297.00      296.90     -0.10    -0.03
-  6   A4 sheet           W       3043.0      210.00      209.47     -0.53    -0.25
-  7   monitor bezel      W       3371.3      597.00      593.82     -3.18    -0.53
-  8   monitor bezel      H       2756.2      336.00      338.63     +2.63    +0.78
-  9   cereal box front   H       2070.9      300.00      302.07     +2.07    +0.69
-  10  cereal box front   W       2629.3      195.00      197.53     +2.53    +1.30
-  11  whiteboard         W       4112.5      900.00      890.88     -9.12    -1.01
-  12  whiteboard         D       3528.8     1081.67     1071.03    -10.64    -0.98
-  13  door panel         H       4468.1     1981.00     1986.92     +5.92    +0.30
-  14  door panel         W       3953.6      762.00      756.49     -5.51    -0.72
-  15  poster             D       2861.6      727.49      726.54     -0.95    -0.13
-  16  poster             H       2199.0      594.00      593.21     -0.79    -0.13
-  17  keyboard           W       2125.9      440.00      440.43     +0.43    +0.10
-  18  pizza box          W       2552.6      330.00      331.54     +1.54    +0.47
-  19  backpack panel     H       2400.9      460.00      452.53     -7.47    -1.62
-  20  framed picture     D       3110.1      640.31      635.23     -5.08    -0.79
+  1   Mac                D       1000.0      356.00      317.70    -38.30   -10.76
+  2   Paperback book     D       2000.0      210.00      198.67    -11.33    -5.40
+  3   Water bottle       D       2000.0      277.00      259.85    -17.15    -6.19
+  4   Hydroflask         D       2000.0      130.00      168.79    +38.79   +29.84
+  5   Headphone case     W       2000.0      150.00      149.38     -0.62    -0.41
+  6   Tennis Racket      W       2000.0      375.00       17.79   -357.21   -95.26
+  7   Game controller    D       2000.0      150.00      120.89    -29.11   -19.41
+  8   clothes hangar     D       2000.0      413.00      360.33    -52.67   -12.75
+  9   Hardback book      D       2000.0      160.00      144.88    -15.12    -9.45
+  10  Tissue box         D       2000.0      231.00      227.30     -3.70    -1.60
+  11  Candle             D       2000.0       77.00       71.93     -5.07    -6.58
+  12  clothing iron      D       2000.0      299.00      265.15    -33.85   -11.32
+  13  Climbing shoes     D       2000.0      229.00      204.22    -24.78   -10.82
+  14  Sketchbook         W       2000.0      257.00      240.60    -16.40    -6.38
+  15  Duct Tape          D       2000.0      146.00      126.99    -19.01   -13.02
+  16  Glasses case       D       2000.0      169.00      143.95    -25.05   -14.82
+  17  Paperback book 2   H       2000.0     2000.00      175.27  -1824.73   -91.24
+  18  Power supply unit  W       2000.0      168.00      155.34    -12.66    -7.54
+  19  Air filter         W       2000.0      356.00      311.77    -44.23   -12.42
+  20  Mouse              W       2000.0      112.00       95.61    -16.39   -14.63
 
 ------------------------------------------------------------------------------------------------
 ERROR STATISTICS
 ------------------------------------------------------------------------------------------------
   measurements                n     : 20
-  ground-truth size range           : 155.0 .. 1981.0 mm
-  distance range               Z    : 2071 .. 4468 mm
+  ground-truth size range           : 77.0 .. 2000.0 mm
+  distance range               Z    : 1000 .. 2000 mm
 
-  mean signed error                 :   -1.170 mm   <- systematic bias
-  std deviation of error            :    4.357 mm   <- random spread
-  mean absolute error         MAE   :    3.209 mm
-  root-mean-square error      RMSE  :    4.405 mm
+  mean signed error                 : -125.429 mm   <- systematic bias
+  std deviation of error            :  407.513 mm   <- random spread
+  mean absolute error         MAE   :  129.309 mm
+  root-mean-square error      RMSE  :  416.529 mm
 
-  mean signed percent error         :   +0.001 %
-  mean absolute percent error MAPE  :    0.633 %
-  std deviation of percent error    :    0.822 %
+  mean signed percent error         :  -16.008 %
+  mean absolute percent error MAPE  :   18.992 %
+  std deviation of percent error    :   28.211 %
 
-  most negative error               :  -10.640 mm  (id 12, whiteboard D)
-  most positive error               :   +5.920 mm  (id 13, door panel H)
-  largest absolute error            :  -10.640 mm  (id 12, whiteboard D)
+  most negative error               : -1824.730 mm  (id 17, Paperback book 2 H)
+  most positive error               :  +38.790 mm  (id 4, Hydroflask D)
+  largest absolute error            : -1824.730 mm  (id 17, Paperback book 2 H)
 
-  standard error of the mean        :    0.974 mm
-  95% CI on the mean signed error   : [-3.080, +0.739] mm
+  standard error of the mean        :   91.123 mm
+  95% CI on the mean signed error   : [-304.030, +53.171] mm
   -> the CI contains zero: no statistically significant bias.
 
 ------------------------------------------------------------------------------------------------
 TREND DIAGNOSTICS
 ------------------------------------------------------------------------------------------------
-  corr(ground-truth size, signed error)  : -0.160
+  corr(ground-truth size, signed error)  : -0.977
      A strong positive value means error grows in proportion to size,
      i.e. a SCALE error -- focal length or Z, not click precision.
-  corr(Z, percent error)                 : -0.404
+  corr(Z, percent error)                 : -0.044
      A trend here implicates the Z measurement itself: a fixed origin
      offset dZ produces a percent error dZ/Z that shrinks with distance.
 
@@ -63,16 +63,16 @@ TREND DIAGNOSTICS
 PER-DIMENSION BREAKDOWN
 ------------------------------------------------------------------------------------------------
   dimension        n  mean err mm   std err mm     MAPE %
-  D                4       -4.273        4.729      0.501
-  H                7       +0.683        4.199      0.659
-  W                9       -1.233        3.957      0.671
+  D               13      -18.181       21.862     11.690
+  H                1    -1824.730        0.000     91.236
+  W                6      -74.585      139.195     22.774
 
 ------------------------------------------------------------------------------------------------
 ERROR PROPAGATION CHECK (plan section 12)
 ------------------------------------------------------------------------------------------------
   W = du * Z / f_x, so relative errors add:
       dW/W  ~=  d(du)/du  +  dZ/Z  +  df_x/f_x
-  Observed spread of percent error : 0.822 %
+  Observed spread of percent error : 28.211 %
   The click-precision term shrinks as the pixel span grows, which is why
   larger objects measure proportionally better -- visible in the size
   breakdown above and in error_vs_size.png.
