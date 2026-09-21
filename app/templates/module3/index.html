@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Module 3 &mdash; Image Blurring{% endblock %}
+{% block content %}
+<h1>Image Blurring: Spatial and Fourier Domains</h1>
+<p class="lead">Upload an image, apply one filter by both methods, and compare the results.</p>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<form class="panel" method="post" enctype="multipart/form-data">
+  <div class="grid3">
+    <div>
+      <label for="image">Image</label>
+      <input id="image" name="image" type="file" accept="image/*" required>
+    </div>
+    <div>
+      <label for="kind">Filter</label>
+      <select id="kind" name="kind">
+        <option value="gaussian" {{ 'selected' if values.kind == 'gaussian' else '' }}>Gaussian</option>
+        <option value="box" {{ 'selected' if values.kind == 'box' else '' }}>Box</option>
+      </select>
+    </div>
+    <div>
+      <label for="size">Kernel size</label>
+      <select id="size" name="size">
+        {% for n in [3, 5, 7, 9, 11, 15, 21, 31] %}
+        <option value="{{ n }}" {{ 'selected' if values.size == n else '' }}>{{ n }} &times; {{ n }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <label for="sigma">Gaussian sigma (ignored for box filter)</label>
+  <input id="sigma" name="sigma" type="number" min="0.1" max="20" step="0.1" value="{{ values.sigma }}">
+  <button type="submit">Blur and compare</button>
+</form>
+
+{% if result %}
+<div class="readout">
+  <div class="stat"><div class="label">Average absolute difference</div><div class="value">{{ '%.3e'|format(result.metrics.average_absolute_difference) }}</div></div>
+  <div class="stat"><div class="label">Maximum absolute difference</div><div class="value">{{ '%.3e'|format(result.metrics.maximum_absolute_difference) }}</div></div>
+</div>
+
+<div class="result-grid">
+  {% for key, label in [('original', 'Original'), ('spatial', 'Spatial convolution'), ('fourier', 'Fourier multiplication + inverse'), ('difference', 'Scaled absolute difference')] %}
+  <figure class="result-figure">
+    <img src="{{ url_for('module3.output', name=result.names[key]) }}" alt="{{ label }}">
+    <figcaption>{{ label }}</figcaption>
+  </figure>
+  {% endfor %}
+</div>
+
+<details class="panel">
+  <summary>How this validates the convolution theorem</summary>
+  <p>The first result directly convolves the image with the selected kernel. The second takes the Fourier transforms of the image and kernel, multiplies them, and applies the inverse Fourier transform. Values close to zero above show that the outputs are the same apart from floating-point numerical precision.</p>
+</details>
+{% endif %}
+{% endblock %}
