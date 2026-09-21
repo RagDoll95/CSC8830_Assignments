@@ -88,6 +88,18 @@ ASSIGNMENTS = [
         # is written, not interactive: theory/two_camera_derivation.md.
         parts=["Calibration", "Measure", "Records"],
     ),
+    Assignment(
+        slug="module-3",
+        number=3,
+        title="Image Blurring in Spatial and Fourier Domains",
+        subtitle="Filtering, convolution, and the Fourier equivalent",
+        path=os.path.join("week_3", "module3"),
+        module="modules.module3",
+        summary="Blur an uploaded image with a box or Gaussian filter, compare "
+                "direct spatial convolution with Fourier-domain multiplication, "
+                "and display numerical evidence that the outputs agree.",
+        parts=["Blur and compare"],
+    ),
 ]
 
 
