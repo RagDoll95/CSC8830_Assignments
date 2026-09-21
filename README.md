@@ -5,7 +5,7 @@ the following lines to launch
 
 ```bash
 # from this folder
-pip install -r week_2/module2/requirements.txt
+pip install -r requirements.txt
 python app/app.py
 # open http://127.0.0.1:5000
 ```
@@ -17,6 +17,7 @@ any page, and each assignment keeps its own navigation bar for its own parts.
 |---|---|---|
 | `/` | Home — every assignment in the repository | — |
 | `/module-2/` | Module 2 — camera calibration and real-world measurement | `week_2/module2/` |
+| `/module-3/` | Module 3 — image blurring in spatial and Fourier domains | `week_3/module3/` |
 
 ## Layout
 
@@ -25,6 +26,7 @@ app/                     the web application (all assignments)
   app.py                 Flask instance, home page, shared navigation, upload cap
   assignments.py         the registry: which assignments exist and where they live
   modules/module2.py     Module 2's pages, as a Flask blueprint
+  modules/module3.py     Module 3's blur-and-compare page
   templates/             base.html + home.html, then one folder per assignment
   static/style.css
 week_2/module2/          Module 2's own code: calibration, measurement, validation, theory
@@ -40,3 +42,5 @@ week_2/module2/          Module 2's own code: calibration, measurement, validati
 
 - [`week_2/module2/README.md`](week_2/module2/README.md) — method, results, layout, and the
   assignment-requirement map
+- [`week_3/module3/README.md`](week_3/module3/README.md) — filtering implementation,
+  validation workflow, CLI, and theory
