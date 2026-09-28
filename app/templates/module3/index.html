@@ -47,10 +47,5 @@
   </figure>
   {% endfor %}
 </div>
-
-<details class="panel">
-  <summary>How this validates the convolution theorem</summary>
-  <p>The first result directly convolves the image with the selected kernel. The second takes the Fourier transforms of the image and kernel, multiplies them, and applies the inverse Fourier transform. Values close to zero above show that the outputs are the same apart from floating-point numerical precision.</p>
-</details>
 {% endif %}
 {% endblock %}
