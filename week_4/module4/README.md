@@ -27,24 +27,15 @@ edges.png, closed.png, and overlay.png. The web app uses ignored session uploads
 5. Extract external contours with `cv2.findContours`: RETR_EXTERNAL and CHAIN_APPROX_SIMPLE.
 6. Draw all candidate contours in green with `cv2.drawContours`.
 
-The same algorithm handles both assignment questions. 16-bit images are scaled
+16-bit images are scaled
 from their observed minimum/maximum to 0–255 because Canny needs 8-bit input.
 Grayscale thermal images are preferred. False-color thermal RGB images are
 accepted, but grayscale conversion of palette colors is not a temperature map.
-No machine learning, deep learning, or trained person detector is used.
 
 ## Interpretation and limitations
-This is a Canny/contour baseline, not semantic human segmentation. It can outline
-a person when contrast is strong and the background is simple. It may detect
-background objects and internal clothing details, miss low-contrast body parts,
-or join unrelated boundaries during closing. External contour retrieval does
+This is a Canny/contour baseline, so external contour retrieval does
 not guarantee that the contour corresponds to a closed human silhouette.
 We deliberately do not assume that the largest contour represents the person.
 No exact-boundary accuracy claim is made without evaluation on actual images.
-
-SAM2 is not integrated: perform that comparison separately in the final write-up.
-For the submission, capture the RGB and thermal demonstrations, compare each
-with SAM2, and include the repository URL in the final PDF. Theory derivations
-and their rationale are in theory.md. No example results are claimed here.
 
 Repository: https://github.com/RagDoll95/CSC8830_Assignments
