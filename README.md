@@ -44,3 +44,7 @@ week_2/module2/          Module 2's own code: calibration, measurement, validati
   assignment-requirement map
 - [`week_3/module3/README.md`](week_3/module3/README.md) — filtering implementation,
   validation workflow, CLI, and theory
+
+## Module 4 — Human boundary detection
+
+Open `/module-4/` to upload an RGB or thermal image and run the fixed OpenCV Canny/contour pipeline. See [week_4/module4/README.md](week_4/module4/README.md) for CLI usage, parameters, and limitations.
