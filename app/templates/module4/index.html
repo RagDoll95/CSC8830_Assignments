@@ -21,8 +21,4 @@
 {% endfor %}
 </div>
 {% endif %}
-<details class="panel"><summary>Method and limitations</summary>
-<p>Grayscale conversion → 5 × 5 Gaussian blur → Canny (50, 150) → one 3 × 3 morphological closing → external contour extraction. All settings are fixed.</p>
-<p>This classical method detects intensity boundaries; it does not recognize people or guarantee a complete human silhouette. Gap closing can connect unrelated edges. Grayscale thermal data is preferred; colors in a false-color thermal image do not directly represent temperature after grayscale conversion. A 16-bit image is scaled to 8-bit for Canny.</p>
-</details>
 {% endblock %}
