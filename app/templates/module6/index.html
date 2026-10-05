@@ -4,9 +4,14 @@
 <h1>Optical flow</h1>
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 <form class="panel" method="post" enctype="multipart/form-data">
-<label for="video">Video</label>
-<input id="video" name="video" type="file" accept=".mp4,.avi,.mov,.mkv,.webm,.m4v" required>
-<label for="start">Start time (seconds)</label>
+<label for="sample">30-second sample</label>
+<select id="sample" name="sample">
+<option value="penguins">Penguin walk</option>
+<option value="marble_race">Marble race</option>
+</select>
+<label for="video">Or upload a video</label>
+<input id="video" name="video" type="file" accept=".mp4,.avi,.mov,.mkv,.webm,.m4v">
+<label for="start">Upload start time (seconds)</label>
 <input id="start" name="start" type="number" min="0" step="0.1" value="0" required>
 <button type="submit">Process 30 seconds</button>
 </form>
