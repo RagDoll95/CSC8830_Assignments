@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Module 6 — Optical Flow{% endblock %}
+{% block content %}
+<h1>Optical flow and two-frame tracking</h1>
+<p class="lead">Pyramidal Lucas&ndash;Kanade flow over 30 seconds of video. For the bundled samples,
+the first two frames are also checked against hand-measured pixel locations.</p>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+<form class="panel" method="post" enctype="multipart/form-data">
+<label for="sample">30-second sample</label>
+<select id="sample" name="sample">
+<option value="penguins">Penguin walk</option>
+<option value="marble_race">Marble race</option>
+</select>
+<label for="video">Or upload a video</label>
+<input id="video" name="video" type="file" accept=".mp4,.avi,.mov,.mkv,.webm,.m4v">
+<label for="start">Upload start time (seconds)</label>
+<input id="start" name="start" type="number" min="0" step="0.1" value="0" required>
+<button type="submit">Process 30 seconds</button>
+<p class="small muted">The samples are precomputed and open at once. Uploaded videos are processed on the
+server and can take several minutes on the hosted app; for long videos, run <code class="inline">motion.py</code> locally (see the README).</p>
+</form>
+{% if result %}
+{% macro out(name) %}{{ url_for('module6.output', run=result.run, name=name) }}{% endmacro %}
+<div class="panel">
+<h2>Flow</h2>
+{% if result.video.endswith('.mp4') %}<video src="{{ out(result.video) }}" controls width="640"></video>{% endif %}
+<p>{% for name,label in [(result.video,'Flow video'),('points.csv','Flow vectors (CSV)'),('frame0.png','First frame'),('frame1.png','Second frame'),('pair_flow.png','Flow overlay')] %}
+<a href="{{ out(name) }}" download>{{ label }}</a>{% if not loop.last %} &middot; {% endif %}
+{% endfor %}</p>
+</div>
+<div class="panel">
+<h2>What the flow shows</h2>
+<p class="small">The median vector of each frame estimates the dominant (camera) motion. Vectors more than
+1&nbsp;px away from it move on their own or sit at a different depth (parallax).</p>
+<img src="{{ out('flow_summary.png') }}" alt="Flow vectors split by dominant motion, and dominant motion over time" style="max-width:100%">
+<dl class="kv">
+<dt>Vectors</dt><dd>{{ result.summary.vectors }} over {{ result.summary.frames }} frame pairs</dd>
+<dt>Median speed</dt><dd>{{ '%.2f'|format(result.summary.median_speed_px_per_frame) }} px/frame</dd>
+<dt>Median camera motion</dt><dd>{{ '%.2f'|format(result.summary.median_camera_motion_px_per_frame) }} px/frame</dd>
+<dt>Static (&lt;0.5 px)</dt><dd>{{ '%.0f'|format(100 * result.summary.static_fraction) }}%</dd>
+<dt>Differs from dominant</dt><dd>{{ '%.0f'|format(100 * result.summary.differs_from_dominant_fraction) }}%</dd>
+</dl>
+</div>
+{% if result.validation %}
+<div class="panel">
+<h2>Tracking check against measured pixels</h2>
+<p class="small muted">Points marked by hand in frames 0 and 1, compared with the pyramidal Lucas&ndash;Kanade prediction and with integer SSD template matching (21&times;21 template, &plusmn;10 px search).</p>
+<table>
+<thead><tr><th>Point</th><th class="num">Frame 0 (x, y)</th><th class="num">Measured frame 1</th><th class="num">Predicted frame 1</th><th class="num">Error (px)</th><th class="num">SSD template match</th><th class="num">SSD error (px)</th></tr></thead>
+<tbody>
+{% for r in result.validation %}
+<tr><td>{{ r.point|replace('_',' ') }}</td>
+<td class="num">({{ r.x0|float|int }}, {{ r.y0|float|int }})</td>
+<td class="num">({{ r.measured_x1|float|int }}, {{ r.measured_y1|float|int }})</td>
+<td class="num">({{ '%.2f'|format(r.tracked_x1|float) }}, {{ '%.2f'|format(r.tracked_y1|float) }})</td>
+<td class="num">{{ '%.2f'|format(r.error_px|float) if r.error_px else 'lost' }}</td>
+<td class="num">({{ r.ssd_x1|float|int }}, {{ r.ssd_y1|float|int }})</td>
+<td class="num">{{ '%.2f'|format(r.ssd_error_px|float) }}</td></tr>
+{% endfor %}
+</tbody></table>
+<img src="{{ out('validation.png') }}" alt="Measured and predicted points in both frames" style="max-width:100%">
+<p><a href="{{ out('validation.csv') }}" download>Validation table (CSV)</a> &middot;
+<a href="{{ out('tracking_calculations.json') }}" download>Normal equations per point (JSON)</a></p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Long requests: block repeat clicks, which would queue duplicate jobs on the server.
+document.querySelectorAll('form').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    button.textContent = 'Processing\u2026 this can take a minute';
+  });
+});
+// A page restored with the Back button keeps its disabled state; re-enable it.
+window.addEventListener('pageshow', function () {
+  document.querySelectorAll('button[type=submit]').forEach(function (button) { button.disabled = false; });
+});
+</script>
+{% endblock %}

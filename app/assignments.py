@@ -111,6 +111,18 @@ ASSIGNMENTS = [
                 "using a fixed OpenCV Canny and contour pipeline.",
         parts=["RGB and thermal boundaries"],
     ),
+    Assignment(
+        slug="module-6",
+        number=6,
+        title="Optical Flow, Motion Tracking and Structure from Motion",
+        subtitle="Lucas-Kanade flow on two 30-second videos, four-view planar SfM",
+        path=os.path.join("week_6", "module6"),
+        module="modules.module6",
+        summary="Visualize Lucas-Kanade optical flow over 30 seconds of video, "
+                "check two-frame tracking against measured pixels, and recover a "
+                "flat object's shape from four photos by Tomasi-Kanade factorization.",
+        parts=["Optical flow and tracking", "Structure from motion"],
+    ),
 ]
 
 

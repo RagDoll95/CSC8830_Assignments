@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Module 6 — Structure from Motion{% endblock %}
+{% block content %}
+<h1>Four-view structure from motion</h1>
+<p class="lead">Tomasi&ndash;Kanade factorization (FPCV-4-4) of a flat object seen from four viewpoints:
+centroid-subtracted observation matrix <em>W</em>, rank constraint by SVD (rank 2 for a plane), and the
+matrix <em>Q</em> from the orthonormality of each camera's <em>i</em>, <em>j</em> by Newton's method.
+Lens distortion and intrinsics are removed with the Module 2 calibration.</p>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<form class="panel" method="post">
+<h2>Bundled example</h2>
+<p class="small">Four of the Module 2 calibration photos taken from about 1.05&nbsp;m (9&times;6 inner corners, 24.9&nbsp;mm squares).
+The grid is used only for scale (one 199.2&nbsp;mm edge) and for grading.</p>
+<input type="hidden" name="source" value="bundled">
+<button type="submit">Run bundled example</button>
+</form>
+
+<form class="panel" method="post" enctype="multipart/form-data" id="upload-form">
+<h2>Your own four photos</h2>
+<p class="small">Same phone, 1&times; lens, portrait, full resolution, as calibrated in Module 2. JPEG or PNG.
+Take all four from about the same distance (the orthographic model assumes one magnification), well away
+from the object, with different viewing directions.</p>
+<input type="hidden" name="source" value="upload">
+<input type="hidden" name="points" id="points">
+<label for="photos">Four photos, in view order</label>
+<input id="photos" name="photos" type="file" accept=".jpg,.jpeg,.png" multiple required>
+<label><input type="radio" name="mode" value="checkerboard" checked> Photos show the 9&times;6 checkerboard (detect corners)</label>
+<label><input type="radio" name="mode" value="clicked"> Mark corners by hand</label>
+<div id="marking" hidden>
+<p class="small">Click the same object corners <strong>in the same order</strong> in every photo, walking
+around the outline. Then give one real distance you measured with a ruler.</p>
+<div id="canvases" class="cards"></div>
+<label>Known distance: from point <input name="known_i" type="number" min="1" value="1" style="width:4em">
+to point <input name="known_j" type="number" min="1" value="2" style="width:4em">
+is <input name="known_mm" type="number" min="0" step="0.1" style="width:6em"> mm</label>
+</div>
+<button type="submit">Reconstruct</button>
+</form>
+
+{% if result %}
+{% set s = result.summary %}
+{% macro out(name) %}{{ url_for('module6.output', run=result.run, name=name) }}{% endmacro %}
+<div class="panel">
+<h2>Result</h2>
+<img src="{{ out('views.png') }}" alt="The four views with measured and reprojected points" style="max-width:100%">
+<img src="{{ out('reconstruction.png') }}" alt="Recovered structure, cameras and boundary" style="max-width:100%">
+<table>
+<thead><tr><th>View</th><th>Photo</th><th class="num">Recovered tilt (&deg;)</th><th class="num">Mean reprojection (px)</th>
+{% if s.calibration_poses %}<th class="num">Calibration tilt (&deg;)</th><th class="num">Calibration distance (mm)</th>
+<th class="num">Calibration camera position (mm, board frame)</th>{% endif %}</tr></thead>
+<tbody>
+{% for c in s.cameras %}
+<tr><td>{{ c.view }}</td><td>{{ s.images[loop.index0] }}</td>
+<td class="num">{{ '%.1f'|format(c.tilt_deg) }}</td>
+<td class="num">{{ '%.2f'|format(s.reprojection_mean_px[loop.index0]) }}</td>
+{% if s.calibration_poses %}{% set p = s.calibration_poses[loop.index0] %}
+<td class="num">{{ '%.1f'|format(p.tilt_deg) }}</td>
+<td class="num">{{ '%.0f'|format(p.distance_mm) }}</td>
+<td class="num">({{ p.center_mm|map('round')|map('int')|join(', ') }})</td>{% endif %}</tr>
+{% endfor %}
+</tbody></table>
+<dl class="kv">
+<dt>Singular values of W</dt><dd>{{ s.singular_values[:4]|map('round', 4)|join(', ') }}, &hellip;</dd>
+<dt>Boundary side lengths</dt><dd>{{ s.boundary_side_lengths_mm|map('round', 1)|join(', ') }} mm</dd>
+<dt>Orthonormality residual</dt><dd>{{ '%.4f'|format((s.orthonormality_residuals|map('abs')|max)) }} (largest |equation|)</dd>
+{% if s.ground_truth %}<dt>Points vs. true grid</dt>
+<dd>RMS {{ '%.2f'|format(s.ground_truth.point_rms_mm) }} mm, max {{ '%.2f'|format(s.ground_truth.point_max_mm) }} mm</dd>{% endif %}
+</dl>
+<p><a href="{{ out('sfm_calculations.json') }}" download>All calculations (JSON)</a> &middot;
+<a href="{{ out('boundary.csv') }}" download>Boundary points (CSV)</a></p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Long requests: block repeat clicks, which would queue duplicate jobs on the server.
+document.querySelectorAll('form').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    button.textContent = 'Processing\u2026 this can take a minute';
+  });
+});
+// A page restored with the Back button keeps its disabled state; re-enable it.
+window.addEventListener('pageshow', function () {
+  document.querySelectorAll('button[type=submit]').forEach(function (button) { button.disabled = false; });
+});
+</script>
+<script>
+(function () {
+  const input = document.getElementById('photos');
+  const marking = document.getElementById('marking');
+  const holder = document.getElementById('canvases');
+  const views = [];
+
+  function draw(view) {
+    const ctx = view.canvas.getContext('2d');
+    ctx.drawImage(view.image, 0, 0, view.canvas.width, view.canvas.height);
+    const k = view.canvas.width / view.image.naturalWidth;
+    ctx.font = '13px sans-serif';
+    view.points.forEach(function (p, i) {
+      ctx.fillStyle = '#ff2';
+      ctx.beginPath(); ctx.arc(p[0] * k, p[1] * k, 4, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillText(String(i + 1), p[0] * k + 6, p[1] * k - 6);
+    });
+    view.label.textContent = 'View ' + view.index + ': ' + view.points.length + ' points';
+  }
+
+  function addView(file, index) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const label = document.createElement('strong');
+    const canvas = document.createElement('canvas');
+    const undo = document.createElement('button');
+    undo.type = 'button'; undo.textContent = 'Undo last point';
+    card.append(label, canvas, undo);
+    holder.append(card);
+    const view = {index: index, image: new Image(), canvas: canvas, label: label, points: []};
+    view.image.onload = function () {
+      canvas.width = 260;
+      canvas.height = Math.round(260 * view.image.naturalHeight / view.image.naturalWidth);
+      draw(view);
+    };
+    view.image.src = URL.createObjectURL(file);
+    canvas.addEventListener('click', function (event) {
+      const box = canvas.getBoundingClientRect();
+      const k = view.image.naturalWidth / box.width;
+      view.points.push([(event.clientX - box.left) * k, (event.clientY - box.top) * k]);
+      draw(view);
+    });
+    undo.addEventListener('click', function () { view.points.pop(); draw(view); });
+    views.push(view);
+  }
+
+  function refresh() {
+    const clicked = document.querySelector('input[name=mode]:checked').value === 'clicked';
+    marking.hidden = !clicked;
+    if (!clicked || views.length) { return; }
+    Array.from(input.files).slice(0, 4).forEach(function (f, i) { addView(f, i + 1); });
+  }
+
+  input.addEventListener('change', function () { holder.innerHTML = ''; views.length = 0; refresh(); });
+  document.querySelectorAll('input[name=mode]').forEach(function (r) { r.addEventListener('change', refresh); });
+  document.getElementById('upload-form').addEventListener('submit', function () {
+    document.getElementById('points').value = JSON.stringify(views.map(function (v) { return v.points; }));
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+__pycache__/
+output/
+*.mp4
+*.avi
+!penguins.mp4
+!marble_race.mp4
+*.aux
+*.log
+*.out
