@@ -6,7 +6,8 @@ python app/app.py
 # Open http://127.0.0.1:5000/module-6/
 ```
 
-Upload a video and select a start time with at least 30 seconds remaining.
+Choose the bundled penguin or marble-race sample (30 seconds each), or upload a
+video and select a start time with at least 30 seconds remaining.
 Or run directly:
 
 ```bash
@@ -24,8 +25,10 @@ use the resized images. Install ffmpeg optionally for MP4 output; otherwise play
 locally. The web upload limit is 200 MB. Use the script if web processing times out.
 
 Chosen videos:
-- https://www.youtube.com/watch?v=fdk7X4LrgS4
-- https://www.youtube.com/watch?v=0sHu99vdz-A
+- Penguin walk: https://www.youtube.com/watch?v=fdk7X4LrgS4 — sample 00:30–01:00.
+- Marble race: https://www.youtube.com/watch?v=0sHu99vdz-A — sample 02:00–02:30.
+
+Samples are silent, 640-pixel-wide MP4s retaining the source frame rates.
 
 Use local video files; OpenCV cannot read YouTube watch-page URLs. Run each video
 separately. Compare corresponding corners manually in the two exported frames to
