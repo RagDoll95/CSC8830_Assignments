@@ -100,6 +100,17 @@ ASSIGNMENTS = [
                 "and display numerical evidence that the outputs agree.",
         parts=["Blur and compare"],
     ),
+    Assignment(
+        slug="module-4",
+        number=4,
+        title="Human Boundary Detection",
+        subtitle="Canny edges and contours in RGB and thermal images",
+        path=os.path.join("week_4", "module4"),
+        module="modules.module4",
+        summary="Extract candidate boundaries from RGB and thermal images "
+                "using a fixed OpenCV Canny and contour pipeline.",
+        parts=["RGB and thermal boundaries"],
+    ),
 ]
 
 

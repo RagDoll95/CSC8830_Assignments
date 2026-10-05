@@ -107,6 +107,8 @@ def create_app():
     app.broken = broken
     return app
 
+app = create_app()
+os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="CSc 8830 assignments web application")
@@ -115,8 +117,6 @@ def main(argv=None):
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
 
-    os.makedirs(UPLOAD_ROOT, exist_ok=True)
-    app = create_app()
 
     print("=" * 66)
     print("CSc 8830 -- assignments web application")

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Module 4 &mdash; Human Boundary Detection{% endblock %}
+{% block content %}
+<h1>RGB and Thermal Boundary Detection</h1>
+<p class="lead">Upload a photo or thermal image to view its edges and candidate outlines.</p>
+{% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+<form class="panel" method="post" enctype="multipart/form-data">
+  <label for="image">RGB or thermal image</label>
+  <input id="image" name="image" type="file" accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff" required>
+  <button type="submit">Detect boundaries</button>
+</form>
+<p>Use a clearly visible person against a simple background for the clearest outline. Detected contours may also include clothing and background edges.</p>
+{% if result %}
+<p>{{ result.count }} candidate contour{{ '' if result.count == 1 else 's' }} detected.{% if result.count == 0 %} No boundaries were detected at the fixed settings.{% endif %}</p>
+<div class="result-grid">
+{% for key, label in [('original', 'Original image'), ('edges', 'Canny edges'), ('closed', 'Edges after gap closing'), ('overlay', 'Candidate boundary overlay')] %}
+<figure class="result-figure">
+  <img src="{{ url_for('module4.output', name=result.names[key]) }}" alt="{{ label }}">
+  <figcaption>{{ label }} &middot; <a href="{{ url_for('module4.output', name=result.names[key]) }}" download="{{ key }}.png">Download PNG</a></figcaption>
+</figure>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
