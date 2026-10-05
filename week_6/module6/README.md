@@ -50,14 +50,25 @@ and for grading. The app page `/module-6/structure` also takes four new photos, 
 corners detected (checkerboard) or clicked by hand in the same order in every photo.
 Use the calibrated phone at 1x, portrait, from the same distance in every view.
 
-## Reproduce the write-up
+## Precomputed examples and reproducing the write-up
+
+The two sample videos and the bundled four-view example never change, so the app
+computes each once into `output/<name>/` and reuses it on every later click. After
+deploying (for example on PythonAnywhere: `git pull`, then this, then reload the web app),
+build them up front so even the first click is instant:
 
 ```bash
-python week_6/module6/validate.py penguins --out week_6/module6/output/penguins
-python week_6/module6/validate.py marble_race --out week_6/module6/output/marble_race
-python week_6/module6/sfm.py --out week_6/module6/output/structure
+python week_6/module6/results.py
+```
+
+That command also produces every figure and number in the write-up:
+
+```bash
 cd week_6/module6 && pdflatex answers.tex && pdflatex answers.tex
 ```
+
+Uploaded videos and photos are processed during the request. On a slow host a long
+upload can time out; run `motion.py` or `sfm.py` locally instead.
 
 For your own photos from the command line:
 `sfm.py --images a.jpg b.jpg c.jpg d.jpg --points points.json --out output`, where

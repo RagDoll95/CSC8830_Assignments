@@ -75,6 +75,20 @@ is <input name="known_mm" type="number" min="0" step="0.1" style="width:6em"> mm
 
 {% block scripts %}
 <script>
+// Long requests: block repeat clicks, which would queue duplicate jobs on the server.
+document.querySelectorAll('form').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    button.textContent = 'Processing\u2026 this can take a minute';
+  });
+});
+// A page restored with the Back button keeps its disabled state; re-enable it.
+window.addEventListener('pageshow', function () {
+  document.querySelectorAll('button[type=submit]').forEach(function (button) { button.disabled = false; });
+});
+</script>
+<script>
 (function () {
   const input = document.getElementById('photos');
   const marking = document.getElementById('marking');

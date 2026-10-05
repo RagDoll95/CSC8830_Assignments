@@ -16,6 +16,8 @@ the first two frames are also checked against hand-measured pixel locations.</p>
 <label for="start">Upload start time (seconds)</label>
 <input id="start" name="start" type="number" min="0" step="0.1" value="0" required>
 <button type="submit">Process 30 seconds</button>
+<p class="small muted">The samples are precomputed and open at once. Uploaded videos are processed on the
+server and can take several minutes on the hosted app; for long videos, run <code class="inline">motion.py</code> locally (see the README).</p>
 </form>
 {% if result %}
 {% macro out(name) %}{{ url_for('module6.output', run=result.run, name=name) }}{% endmacro %}
@@ -62,4 +64,21 @@ the first two frames are also checked against hand-measured pixel locations.</p>
 </div>
 {% endif %}
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Long requests: block repeat clicks, which would queue duplicate jobs on the server.
+document.querySelectorAll('form').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    button.textContent = 'Processing\u2026 this can take a minute';
+  });
+});
+// A page restored with the Back button keeps its disabled state; re-enable it.
+window.addEventListener('pageshow', function () {
+  document.querySelectorAll('button[type=submit]').forEach(function (button) { button.disabled = false; });
+});
+</script>
 {% endblock %}
