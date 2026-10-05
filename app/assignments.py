@@ -75,15 +75,6 @@ class Assignment(object):
 
 ASSIGNMENTS = [
     Assignment(
-        slug="module-6", number=6,
-        title="Optical Flow and Motion Tracking",
-        subtitle="30-second flow videos and consecutive frame coordinates",
-        path=os.path.join("week_6", "module6"), module="modules.module6",
-        summary="Visualize sparse optical flow in any local video and inspect "
-                "Lucas-Kanade point coordinates in two consecutive frames.",
-        parts=["Optical flow"],
-    ),
-    Assignment(
         slug="module-2",
         number=2,
         title="Camera Calibration and Real-World Measurement",
@@ -119,6 +110,18 @@ ASSIGNMENTS = [
         summary="Extract candidate boundaries from RGB and thermal images "
                 "using a fixed OpenCV Canny and contour pipeline.",
         parts=["RGB and thermal boundaries"],
+    ),
+    Assignment(
+        slug="module-6",
+        number=6,
+        title="Optical Flow, Motion Tracking and Structure from Motion",
+        subtitle="Lucas-Kanade flow on two 30-second videos, four-view planar SfM",
+        path=os.path.join("week_6", "module6"),
+        module="modules.module6",
+        summary="Visualize Lucas-Kanade optical flow over 30 seconds of video, "
+                "check two-frame tracking against measured pixels, and recover a "
+                "flat object's shape from four photos by Tomasi-Kanade factorization.",
+        parts=["Optical flow and tracking", "Structure from motion"],
     ),
 ]
 

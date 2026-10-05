@@ -1,0 +1,343 @@
+% Build (from week_6/module6, after the three commands in README.md):
+%   pdflatex answers.tex && pdflatex answers.tex
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs,float,xurl,hyperref}
+\hypersetup{colorlinks=true,urlcolor=blue,linkcolor=black,citecolor=black}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\begin{document}
+
+\begin{center}
+{\Large CSc 8830 Assignment 6: Motion Tracking and Structure from Motion}\\[4pt]
+Raghuveer Gummadi
+\end{center}
+
+\textbf{Live app:} \url{https://ragman95.pythonanywhere.com/} \quad (Module 6: \url{https://ragman95.pythonanywhere.com/module-6/})\\
+\textbf{Code:} \url{https://github.com/RagDoll95/CSC8830_Assignments/tree/main/week_6/module6}
+
+The app runs the repository scripts: \texttt{motion.py} (flow video), \texttt{validate.py}
+(two-frame tracking check and flow statistics) and \texttt{sfm.py} (four-view factorization).
+Theory and method follow the course lectures [N1] \emph{Optical Flow} (FPCV-4-3),
+[N2] \emph{Structure from Motion} (FPCV-4-4) and [N3] \emph{Object Tracking} (FPCV-5-1);
+slide numbers are given as, e.g., [N1, s.17].
+
+%======================================================================
+\section{Optical flow and motion tracking}
+
+\textbf{Videos.} Penguin Walk, 00:30--01:00 [V1], and Sand Marble Race, 02:00--02:30 [V2]:
+30\,s each, $640\times360$, 25 and 50 frames/s. In every frame up to 100 corners are
+tracked into the next frame with coarse-to-fine Lucas--Kanade [N1, s.26--36] (OpenCV's
+implementation of [Bouguet 2000], $21\times21$ window, 4 pyramid levels). The arrows form
+the flow video; all vectors are in \texttt{points.csv}.
+
+\subsection{What optical flow tells us, with evidence}
+Optical flow is the motion of brightness patterns in the image; ideally it equals the
+\emph{motion field}, the projection of 3-D scene motion [N1, s.3--6]. Each vector's length
+is the point's image speed and its direction is the direction of motion [N1, s.6].
+From our videos:
+\begin{enumerate}\itemsep0pt
+\item \textbf{Object motion: speed and direction.} The white marble moves
+$(-2.0,-3.8)$\,px/frame ($\approx214$\,px/s, up-left) and the yellow one $(-0.4,+1.0)$\,px/frame.
+Without the 3-D geometry of the track these stay in pixels; with a known ground plane
+they could be converted to real speeds, as in traffic monitoring [N1, s.44].
+\item \textbf{Camera motion (dominant flow).} The flow shared by most points is the
+background, i.e.\ the camera's motion; removing it stabilizes video [N1, s.46]. Taking each
+frame's median vector as that dominant flow: the hand-held penguin camera moves by a median
+$3.8$\,px/frame (only 1\% of vectors are static), the marble camera pans smoothly at
+$2.7$\,px/frame, about $(-4.3,1.7)$ in the first pair (plots below).
+\item \textbf{Independently moving objects.} Vectors that disagree with the dominant flow
+(magenta) mark things moving on their own: in the penguin pair they lie on the penguins and
+the keeper's legs and hands, while the railing and boards follow the camera (cyan).
+\item \textbf{Relative depth.} For a translating camera, nearer points move faster
+[N1, s.6]. In the marble race all sand moves the same way, but the median speed falls from
+5.3 (left third) to 3.9 (middle) to 2.9\,px/frame (right third) over the first 4\,s:
+consistent with the sand being nearer on the left. (Camera rotation can also make flow
+non-uniform, so this is relative, not metric, depth.)
+\item \textbf{Where flow differs from the motion field, and where it fails.} The race's
+scoreboard and timer overlays give zero flow (31\% of vectors are static) although the camera
+moves: flow measures brightness motion, not scene motion [N1, s.7--8]. Spikes in the plots
+are scene cuts (marbles 19.6\,s, penguins 24.1\,s) and a fast pan (penguins 7.2--7.5\,s,
+over 30\,px/frame), where the small-motion assumption breaks [N1, s.34].
+\end{enumerate}
+\begin{figure}[H]\centering
+\includegraphics[width=\linewidth]{output/penguins/flow_summary.png}\\
+\includegraphics[width=\linewidth]{output/marble_race/flow_summary.png}
+\caption{Left: frame 0$\to$1 flow (vectors $\times4$); cyan follows the frame's median
+(dominant) flow, magenta differs by more than 1\,px. Right: dominant flow over the 30\,s and
+the 90th percentile of deviation from it. Top: penguins; bottom: marbles.}
+\end{figure}
+
+\subsection{Tracking equations from first principles}
+\textbf{The tracking problem for two frames.} Given the location of a target (a point and
+a small window $W$ around it) in the frame at time $t$, find its location in the frame at
+$t+\delta t$ [N3, s.22]. Template matching answers this by minimizing the sum of squared
+differences over a shift $(\delta x,\delta y)$ [N3, s.25; N1, s.40]:
+\[
+\mathrm{SSD}(\delta x,\delta y)=\sum_{(x,y)\in W}\big[I(x+\delta x,\,y+\delta y,\,t+\delta t)-I(x,y,t)\big]^2 .
+\]
+This is slow over a large search and limited to whole pixels. The optical flow equations
+give the minimizer directly, at sub-pixel accuracy.
+
+\textbf{Assumption 1, brightness constancy} [N1, s.13]:
+$I(x+\delta x,\,y+\delta y,\,t+\delta t)=I(x,y,t)$.
+
+\textbf{Assumption 2, small motion} [N1, s.14--16]. The first-order Taylor expansion is
+\[
+I(x+\delta x,\,y+\delta y,\,t+\delta t)\approx I(x,y,t)+I_x\delta x+I_y\delta y+I_t\delta t .
+\]
+Subtracting the two, dividing by $\delta t$ and letting $\delta t\to0$ gives the
+\textbf{optical flow constraint equation} [N1, s.17]
+\[
+I_xu+I_yv+I_t=0,\qquad (u,v)=\Big(\frac{dx}{dt},\frac{dy}{dt}\Big).
+\]
+$I_x,I_y,I_t$ come from two frames with the $2\times2\times2$ pixel cube [N1, s.18], e.g.
+$I_x(i,j,t)=\tfrac14\big[I(i{+}1,j,t)+I(i{+}1,j,t{+}1)+I(i{+}1,j{+}1,t)+I(i{+}1,j{+}1,t{+}1)\big]
+-\tfrac14\big[I(i,j,t)+I(i,j,t{+}1)+I(i,j{+}1,t)+I(i,j{+}1,t{+}1)\big]$.
+One equation in two unknowns only fixes the \emph{normal flow},
+$|u_n|=|I_t|/\sqrt{I_x^2+I_y^2}$ along $(I_x,I_y)$: the aperture problem [N1, s.19--24].
+
+\textbf{Lucas--Kanade} [N1, s.26--29]. Assume $(u,v)$ is constant in the $n\times n$ window
+$W$. Each pixel $(k,l)\in W$ gives $I_x(k,l)u+I_y(k,l)v=-I_t(k,l)$, so
+\[
+\underbrace{\begin{bmatrix}I_x(1,1)&I_y(1,1)\\\vdots&\vdots\\I_x(n,n)&I_y(n,n)\end{bmatrix}}_{A\ (n^2\times2)}
+\underbrace{\begin{bmatrix}u\\v\end{bmatrix}}_{\mathbf u}
+=\underbrace{\begin{bmatrix}-I_t(1,1)\\\vdots\\-I_t(n,n)\end{bmatrix}}_{B\ (n^2\times1)},
+\qquad
+\underbrace{\begin{bmatrix}\sum I_x^2&\sum I_xI_y\\\sum I_xI_y&\sum I_y^2\end{bmatrix}}_{A^TA}
+\begin{bmatrix}u\\v\end{bmatrix}=
+\underbrace{\begin{bmatrix}-\sum I_xI_t\\-\sum I_yI_t\end{bmatrix}}_{A^TB},
+\]
+$\mathbf u=(A^TA)^{-1}A^TB$. This is exactly the minimum of the linearized SSD above,
+$\sum_W(I_xu+I_yv+I_t)^2$. It is reliable only when $A^TA$ is well conditioned: both
+eigenvalues large and neither much larger than the other, i.e.\ a textured patch, not a
+smooth region or a single edge [N1, s.29--32]. The tracked point is $p_1=p_0+\mathbf u$.
+
+\textbf{Large motion} [N1, s.34--36]. When the motion is more than about a pixel, the
+Taylor step fails. Build a pyramid by averaging $2\times2$ blocks (motion halves at each
+level), solve at the coarsest level, then at each finer level warp the earlier frame by the
+current flow, solve for the small remaining $(\Delta u,\Delta v)$ and add it.
+
+\subsection{Bilinear interpolation}
+The warp moves pixels to non-integer positions, so intensities must be sampled between
+pixel centres. Let $x=m+\alpha$, $y=n+\beta$ with $m=\lfloor x\rfloor$, $n=\lfloor y\rfloor$,
+$0\le\alpha,\beta<1$. Interpolate linearly along $x$ in the two neighbouring rows,
+$I(x,n)=(1-\alpha)I_{m,n}+\alpha I_{m+1,n}$ and
+$I(x,n{+}1)=(1-\alpha)I_{m,n+1}+\alpha I_{m+1,n+1}$, then along $y$:
+\[
+I(x,y)=(1-\beta)I(x,n)+\beta I(x,n{+}1)
+=(1-\alpha)(1-\beta)I_{m,n}+\alpha(1-\beta)I_{m+1,n}+(1-\alpha)\beta I_{m,n+1}+\alpha\beta I_{m+1,n+1}.
+\]
+Each weight is the area of the opposite sub-rectangle; the four sum to 1, and the result
+is exact for any function $a+bx+cy+dxy$. Example: neighbours
+$\begin{bmatrix}10&20\\30&40\end{bmatrix}$, $\alpha=0.25$, $\beta=0.5$: rows $12.5$ and $32.5$,
+so $I=22.5$.
+
+\subsection{Validation against actual pixel locations}
+For the first pair of consecutive frames in each video I marked recognizable points in
+frame~0 and found them again in frame~1 by eye on enlarged images (integer pixels, about
+$\pm1$\,px; \texttt{measurements.csv}). These are compared with the Lucas--Kanade prediction
+and with SSD template matching ($21\times21$ template, $\pm10$\,px search).
+
+\begin{table}[H]\centering\small
+\begin{tabular}{llrrrrrr}\toprule
+Video & Point & $p_0$ (frame 0) & Measured $p_1$ & LK $\hat p_1$ & LK error & SSD match & SSD error\\\midrule
+Penguins & Neck patch   & (79, 49)  & (78, 50)  & (78.23, 49.96)  & 0.24 & (78, 50) & 0.00\\
+Penguins & Beak tip     & (114, 14) & (115, 12) & (111.63, 13.85) & 3.84 & (111, 14) & 4.47\\
+Marbles  & White marble & (288, 102)& (286, 99) & (285.98, 98.25) & 0.75 & (286, 98) & 1.00\\
+Marbles  & Blue marble  & (432, 53) & (431, 51) & (430.79, 52.68) & 1.69 & (431, 52) & 1.00\\
+Marbles  & Yellow marble& (428, 66) & (427, 67) & (427.60, 66.99) & 0.60 & (428, 67) & 1.00\\\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Worked solve (penguin neck).} With cube derivatives over the $21\times21=441$-pixel
+window at $(79,49)$:
+\[
+\begin{bmatrix}130018.6&-20690.0\\-20690.0&47630.9\end{bmatrix}
+\begin{bmatrix}u\\v\end{bmatrix}=\begin{bmatrix}-119434.5\\57979.9\end{bmatrix},
+\quad \det(A^TA)=5.765\times10^{9},
+\]
+\[
+\begin{bmatrix}u\\v\end{bmatrix}=\frac{1}{\det}
+\begin{bmatrix}47630.9&20690.0\\20690.0&130018.6\end{bmatrix}
+\begin{bmatrix}-119434.5\\57979.9\end{bmatrix}
+=\begin{bmatrix}-0.779\\0.879\end{bmatrix}\text{ px/frame},
+\]
+so one step predicts $(78.22,49.88)$, $0.25$\,px from the measured $(78,50)$. The
+eigenvalues of $A^TA$ are $4.3\times10^4$ and $1.3\times10^5$: a well-conditioned,
+textured patch. At the beak tip they are only $2.3\times10^3$ and $8.1\times10^3$ (blurred,
+low contrast), and both LK and SSD miss by about 4\,px. For the white marble one linear
+step gives $(-0.68,-1.24)$ and misses by $2.2$\,px, because the $\approx4$\,px motion breaks
+the small-motion assumption; coarse-to-fine iteration reduces this to $0.75$\,px. All five
+systems are in \texttt{tracking\_calculations.json}.
+
+\begin{figure}[H]\centering
+\includegraphics[width=.49\linewidth]{output/penguins/validation.png}\hfill
+\includegraphics[width=.49\linewidth]{output/marble_race/validation.png}
+\caption{Measured points (green circles) and Lucas--Kanade predictions (red $+$) in
+frames 0 and 1. Left: penguins; right: marbles.}
+\end{figure}
+
+%======================================================================
+\section{Structure from motion with four views of a planar object}
+
+\textbf{Object, images and camera.} The object is a flat $9\times6$-corner checkerboard
+(24.9\,mm squares) shown on a laptop screen, photographed from four directions with an
+iPhone (1$\times$ main lens, $3024\times4032$ portrait). Its 54 corners are detected
+automatically and are the tracked features [N2, s.5]. The camera parameters come from my
+Module 2 calibration (RMS reprojection 1.86\,px):
+\[
+K=\begin{bmatrix}3336.69&0&1496.68\\0&3335.58&2020.27\\0&0&1\end{bmatrix},\quad
+(k_1,k_2,p_1,p_2,k_3)=(0.223,-1.376,0.0006,-0.0008,2.709).
+\]
+They are used only to remove lens distortion and convert pixels to normalized image
+coordinates $K^{-1}[u,v,1]^T$. The camera positions below come from the same calibration
+(the board's pose in each photo). The factorization does \emph{not} use them; they are used
+only to check it. Tomasi--Kanade assumes one constant magnification [N2, s.8], so the
+four photos were chosen at nearly the same distance (1035--1072\,mm) and from different
+directions.
+
+\begin{table}[H]\centering\small
+\begin{tabular}{clrrrr}\toprule
+View & Photo & Camera position (mm, board frame) & Distance & Tilt from normal & Depth range on board\\\midrule
+1 & IMG\_3930 & (44, $-389$, $-930$)   & 1035 mm & 26.0$^\circ$ & 7.9\%\\
+2 & IMG\_3917 & ($-419$, $-125$, $-915$) & 1069 mm & 31.1$^\circ$ & 11.5\%\\
+3 & IMG\_3928 & (631, $-502$, $-709$)  & 1050 mm & 47.5$^\circ$ & 16.2\%\\
+4 & IMG\_3938 & ($-374$, $-538$, $-751$) & 1072 mm & 45.5$^\circ$ & 13.9\%\\\bottomrule
+\end{tabular}
+\end{table}
+\begin{figure}[H]\centering
+\includegraphics[width=\linewidth]{output/structure/views.png}
+\caption{The four views. Green: detected corners; red: reprojection of the factorization
+$MS$; yellow: estimated boundary.}
+\end{figure}
+
+\subsection{Method (Tomasi--Kanade factorization [N2])}
+\textbf{Orthographic projection} [N2, s.8--11]. Frame $f$ has image axes $\mathbf i_f,\mathbf j_f$
+(unit, orthogonal) and position $C_f$; scene point $P_p$ projects to
+$u_{f,p}=\mathbf i_f^T(P_p-C_f)$, $v_{f,p}=\mathbf j_f^T(P_p-C_f)$.
+
+\textbf{Centering trick} [N2, s.12--14]. Put the world origin at the centroid of the points.
+Then the image centroid is $\bar u_f=-\mathbf i_f^TC_f$, and the centroid-subtracted coordinates
+$\tilde u_{f,p}=u_{f,p}-\bar u_f=\mathbf i_f^TP_p$, $\tilde v_{f,p}=\mathbf j_f^TP_p$ no longer
+contain $C_f$. Stacking all $F=4$ frames and $N=54$ points:
+\[
+\underbrace{\begin{bmatrix}\tilde u_{1,1}&\cdots&\tilde u_{1,N}\\\vdots&&\vdots\\\tilde u_{F,1}&\cdots&\tilde u_{F,N}\\
+\tilde v_{1,1}&\cdots&\tilde v_{1,N}\\\vdots&&\vdots\\\tilde v_{F,1}&\cdots&\tilde v_{F,N}\end{bmatrix}}_{W\ (2F\times N)\ \text{known}}
+=\underbrace{\begin{bmatrix}\mathbf i_1^T\\\vdots\\\mathbf i_F^T\\\mathbf j_1^T\\\vdots\\\mathbf j_F^T\end{bmatrix}}_{M\ (2F\times3)}
+\underbrace{\begin{bmatrix}P_1&\cdots&P_N\end{bmatrix}}_{S\ (3\times N)} .
+\]
+
+\textbf{Rank} [N2, s.24--27]. $\mathrm{rank}(W)=\mathrm{rank}(MS)\le\min(\mathrm{rank}\,M,\mathrm{rank}\,S)\le3$.
+For a \emph{planar} object, take the world $z$ axis along the plane normal, so every
+$P_p=(x_p,y_p,0)$ and $\mathrm{rank}(S)=2$. Then $\mathrm{rank}(W)\le2$, and only the in-plane
+parts $\tilde{\mathbf i}_f,\tilde{\mathbf j}_f$ (first two components) of the camera axes appear in $W$:
+$W=\tilde M\tilde S$ with $\tilde M$ $2F\times2$ and $\tilde S$ $2\times N$.
+
+\textbf{SVD and factorization} [N2, s.28--33]. $W=U\Sigma V^T$. Keep the two largest singular
+values: $W=U_1\Sigma_1V_1^T$, and set $\tilde M=U_1\Sigma_1^{1/2}Q$,
+$\tilde S=Q^{-1}\Sigma_1^{1/2}V_1^T$ for an unknown $2\times2$ matrix $Q$.
+
+\textbf{Orthonormality} [N2, s.34--35]. Write $\mathbf i_f=(\hat a_f^TQ,\ \alpha_f)$ and
+$\mathbf j_f=(\hat b_f^TQ,\ \beta_f)$, where $\hat a_f^T,\hat b_f^T$ are rows $f$ and $F+f$ of
+$U_1\Sigma_1^{1/2}$. The out-of-plane components $\alpha_f,\beta_f$ multiply $z=0$, so they are
+invisible in $W$, but $\mathbf i_f,\mathbf j_f$ must still be orthonormal:
+\[
+\hat a_f^TQQ^T\hat a_f+\alpha_f^2=1,\qquad \hat b_f^TQQ^T\hat b_f+\beta_f^2=1,\qquad
+\hat a_f^TQQ^T\hat b_f+\alpha_f\beta_f=0,\qquad f=1..F.
+\]
+These are $3F=12$ quadratic equations in the 4 entries of $Q$ and the 8 values $\alpha_f,\beta_f$.
+As on [N2, s.35], they are solved with Newton's method (Gauss--Newton, 40 deterministic
+starts, best least-squares solution kept). $Q$ is defined only up to an in-plane rotation and
+a mirror image. I fix the rotation by putting the first edge on $+x$, and the mirror by
+requiring that every camera sees the front of the plane, $(\mathbf i_f\times\mathbf j_f)_z>0$.
+
+\textbf{Scale and boundary.} Orthography gives shape up to scale. With normalized coordinates
+$u\approx X/\bar Z$, $\tilde S$ is in units of $1/\bar Z$. One known length fixes it: the top
+edge (corner 1 to 9) is $8\times24.9=199.2$\,mm. The boundary is the polygon through the
+outer corners of $\tilde S$.
+
+\subsection{Calculations}
+$W$ is $8\times54$. Its columns for corners 1, 9, 46 and 54 (the four outer corners) are
+\[
+W_{[:,\,1,9,46,54]}=\begin{bmatrix}
+-0.1011&0.1062&-0.0973&0.0926\\-0.0893&0.0792&-0.0792&0.0824\\-0.0756&0.0818&-0.0715&0.0750\\-0.0834&0.0836&-0.0808&0.0738\\
+-0.0592&-0.0585&0.0555&0.0567\\-0.0472&-0.0722&0.0747&0.0433\\-0.0794&-0.0208&0.0175&0.0828\\-0.0247&-0.0730&0.0735&0.0223
+\end{bmatrix},
+\]
+(rows $\tilde u_1..\tilde u_4$, $\tilde v_1..\tilde v_4$; image centroids e.g.\ $(\bar u_1,\bar v_1)=(0.0545,-0.2421)$).
+\[
+\sigma(W)=(0.8304,\ 0.5425,\ 0.0159,\ 0.0131,\ 0.0029,\ 0.0005,\dots).
+\]
+Two singular values dominate, about $35\times$ larger than the rest, confirming rank 2 for
+a plane; the small remainder is perspective and corner noise. Then
+\[
+U_1\Sigma_1^{1/2}=\begin{bmatrix}
+-0.5165&-0.0072\\-0.4282&-0.0422\\-0.3947&-0.0150\\-0.4182&-0.0061\\
+0.0092&-0.3915\\0.0856&-0.4014\\-0.1512&-0.3484\\0.1391&-0.3235\end{bmatrix},\qquad
+Q=\begin{bmatrix}-2.0015&0.0446\\-0.0202&-2.4469\end{bmatrix},\qquad
+QQ^T=\begin{bmatrix}4.0082&-0.0688\\-0.0688&5.9875\end{bmatrix}.
+\]
+The recovered camera axes $\mathbf i_f=(\tilde{\mathbf i}_f,\alpha_f)$, $\mathbf j_f=(\tilde{\mathbf j}_f,\beta_f)$,
+$\mathbf k_f=\mathbf i_f\times\mathbf j_f$, and tilt $=\arccos(k_{f,z}/\|\mathbf k_f\|)$:
+\begin{table}[H]\centering\small
+\begin{tabular}{crrrrr}\toprule
+View & $\mathbf i_f$ & $\mathbf j_f$ & $\mathbf k_f$ & Recovered tilt & Calibration tilt\\\midrule
+1 & (1.034, $-0.005$, 0.054) & ($-0.011$, 0.958, $-0.300$) & ($-0.050$, 0.310, 0.991) & 17.6$^\circ$ & 26.0$^\circ$\\
+2 & (0.858, 0.084, 0.508)   & ($-0.163$, 0.986, 0.104)  & ($-0.492$, $-0.172$, 0.860) & 31.2$^\circ$ & 31.1$^\circ$\\
+3 & (0.790, 0.019, 0.612)   & (0.310, 0.846, $-0.432$)  & ($-0.525$, 0.531, 0.662) & 48.4$^\circ$ & 47.5$^\circ$\\
+4 & (0.837, $-0.004$, 0.529) & ($-0.272$, 0.798, 0.517) & ($-0.424$, $-0.576$, 0.667) & 47.0$^\circ$ & 45.5$^\circ$\\\bottomrule
+\end{tabular}
+\end{table}
+Check for view 2: $|\mathbf i_2|^2=0.858^2+0.084^2+0.508^2=1.001$ and
+$\mathbf i_2\cdot\mathbf j_2=-0.140+0.083+0.053=-0.004\approx0$. The largest equation residual is
+$0.07$ (view 1, $|\mathbf i_1|=1.034$). View 1, the least tilted, has the smallest out-of-plane
+components, so its tilt is the least well determined (off by 8$^\circ$). For a plane only
+$\alpha_f\beta_f$ is fixed, so each camera's tilt angle is recovered but not which way it
+leans. The camera positions $C_f$ were removed by the centering trick, so orthographic
+factorization recovers orientations, not positions [N2, s.14].
+
+\textbf{Structure.} Corner 1 is $\tilde S_1=(-0.0972,-0.0624)$ and corner 9 is
+$(0.1008,-0.0588)$, $0.1980$ apart, so the scale is $199.2/0.1980=1006$\,mm per unit.
+Because normalized coordinates are $\approx X/\bar Z$, this scale should equal the mean camera
+distance, and it does: 1006\,mm vs.\ 1057\,mm from calibration. Corner 1 is
+then $(-97.7,-62.8)$\,mm. Reprojection check, corner 1 in view 2:
+$\tilde{\mathbf i}_2^T\tilde S_1=0.8579(-0.0972)+0.0841(-0.0624)=-0.0886$ vs.\ the measured
+$\tilde u_{2,1}=-0.0893$: $0.0007\times3337\approx2.3$\,px.
+
+\begin{figure}[H]\centering
+\includegraphics[width=.95\linewidth]{output/structure/reconstruction.png}
+\caption{Left: singular values of $W$. Right: recovered structure and boundary (blue),
+with the true grid rigidly aligned (grey dashed).}
+\end{figure}
+
+\textbf{Result.} The recovered boundary sides are 199.2 (scale reference), 120.5, 187.4 and
+121.2\,mm, against the true 199.2 and 124.5\,mm. All 54 points are within 7.7\,mm of the true
+grid after rigid alignment (RMS 2.9\,mm). Mean reprojection error is 2.0--6.4\,px per view.
+Three of four camera tilts agree with the calibration to within 1.5$^\circ$.
+
+\textbf{Why the errors are not zero.} The orthographic model needs the depth variation to be
+small compared with the distance [N2, s.8]. Here the tilted board spans 8--16\% of the
+viewing distance, so perspective foreshortens the far edge differently in each view. The
+model cannot represent that, which is why the bottom edge comes out 187\,mm instead of
+199\,mm. The four photos are also among those used for the Module 2 calibration, so $K$ is
+fitted to them. Larger distances (with zoom) or the perspective extensions mentioned in
+[N2, s.38] would reduce the error. The app accepts any four new photos with corners clicked
+by hand.
+
+%======================================================================
+\section*{References}
+\small
+\begin{itemize}\itemsep0pt
+\item[{[N1]}] S.~K. Nayar, \emph{Optical Flow}, Monograph FPCV-4-3, First Principles of Computer Vision, Columbia University, April 2025.
+\item[{[N2]}] S.~K. Nayar, \emph{Structure from Motion}, Monograph FPCV-4-4, First Principles of Computer Vision, Columbia University, April 2025.
+\item[{[N3]}] S.~K. Nayar, \emph{Object Tracking}, Monograph FPCV-5-1, First Principles of Computer Vision, Columbia University, April 2025.
+\item[] B.~D. Lucas and T.~Kanade, ``An iterative image registration technique with an application to stereo vision,'' Imaging Understanding Workshop, 1981.
+\item[] B.~K.~P. Horn and B.~G. Schunck, ``Determining optical flow,'' \emph{Artificial Intelligence}, 1981.
+\item[] J.-Y. Bouguet, ``Pyramidal implementation of the Lucas Kanade feature tracker,'' Intel Corp., 2000 (used via OpenCV).
+\item[] C.~Tomasi and T.~Kanade, ``Shape and motion from image streams under orthography: a factorization method,'' \emph{IJCV}, 1992.
+\item[] Z.~Zhang, ``A flexible new technique for camera calibration,'' \emph{IEEE TPAMI}, 22(11), 2000 (Module 2 calibration).
+\item[{[V1]}] ``Penguin Walk -- Zoo Basel [HD],'' \url{https://www.youtube.com/watch?v=fdk7X4LrgS4}, sample 00:30--01:00.
+\item[{[V2]}] ``SAND MARBLE RACE, S7: Round 1,'' Jelle's Marble Runs, \url{https://www.youtube.com/watch?v=0sHu99vdz-A}, sample 02:00--02:30.
+\end{itemize}
+\end{document}

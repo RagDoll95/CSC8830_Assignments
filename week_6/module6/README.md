@@ -1,4 +1,4 @@
-# Assignment 6A: optical flow
+# Assignment 6: optical flow, tracking and structure from motion
 
 ```bash
 pip install -r requirements.txt
@@ -30,36 +30,40 @@ Chosen videos:
 
 Samples are silent, 640-pixel-wide MP4s retaining the source frame rates.
 
-## Validation and four-view example
+## Two-frame tracking check
 
-Bundled samples include pixel validation against approximate visual annotations in
-`measurements.csv`. Uploaded videos have no supplied annotations. The two-frame
-figures, errors, and normal-equation matrices are downloadable in the app.
+Bundled samples are also checked against hand-measured pixel locations in their first
+two frames (`measurements.csv`): pyramidal Lucas-Kanade predictions, SSD template
+matching, and the single-step normal equations with the slides' 2x2x2-cube derivatives.
+`flow_summary.png` separates the dominant (camera) flow from the rest.
 
-The **Run four-view example** button reconstructs a simulated planar L-shaped card.
-It uses the slides' centering and SVD with rank 2, a known front-parallel first camera,
-and a scale of 70 pixels/cm. It exports four images, camera settings and positions,
-all calculation matrices, and the reconstructed boundary. This is not captured data
-or general uncalibrated 3D reconstruction. See `report.pdf` for the assumptions.
+## Four-view structure from motion
 
-Reproduce the report figures and results from the repository root:
+`sfm.py` is Tomasi-Kanade factorization (FPCV-4-4) for a flat object: centroid-subtracted
+observation matrix W, rank-2 SVD (a plane), and the 2x2 matrix Q from the orthonormality
+of every camera's i, j by Newton's method. Points are undistorted and normalized with the
+Module 2 calibration (`week_2/module2/calibration/output/camera_params.yaml`).
+
+The default uses four Module 2 checkerboard photos taken from about 1.05 m
+(IMG_3930, 3917, 3928, 3938). The known 24.9 mm grid is used only for one scale distance
+and for grading. The app page `/module-6/structure` also takes four new photos, with
+corners detected (checkerboard) or clicked by hand in the same order in every photo.
+Use the calibrated phone at 1x, portrait, from the same distance in every view.
+
+## Reproduce the write-up
 
 ```bash
 python week_6/module6/validate.py penguins --out week_6/module6/output/penguins
 python week_6/module6/validate.py marble_race --out week_6/module6/output/marble_race
 python week_6/module6/sfm.py --out week_6/module6/output/structure
-cd week_6/module6
-pdflatex report.tex
+cd week_6/module6 && pdflatex answers.tex && pdflatex answers.tex
 ```
 
-For measured four-view coordinates, use `sfm.py --input data.json --out output`.
-The JSON requires `points` (4 views × N ordered boundary points × [x,y]) and
-`scale` (pixels per object unit); the first view must be front-parallel and all views
-must share the scale. Supply the actual photographs and camera information alongside
-that data. The simulated camera positions are inputs, not recovered distances.
+For your own photos from the command line:
+`sfm.py --images a.jpg b.jpg c.jpg d.jpg --points points.json --out output`, where
+`points.json` is `{"points": [4 views x N x [x, y]], "known": [i, j, mm]}`.
 
-`report.pdf` includes calculations, figures, sources, and limitations. A recording
-of the running app is still needed for the classroom submission. If captured images
-are required for Part B, replace the explicitly simulated example with your four views.
+`answers.pdf` is the submission write-up. Hosted app: https://ragman95.pythonanywhere.com/
 
-References: Nayar (2025), *Optical Flow*, FPCV-4-3; *Structure from Motion*, FPCV-4-4.
+References: Nayar (2025), *Optical Flow* FPCV-4-3, *Structure from Motion* FPCV-4-4,
+*Object Tracking* FPCV-5-1; Tomasi and Kanade (1992).

@@ -27,20 +27,12 @@ This interpolates horizontally in two rows, then vertically between them.
 For neighboring values [10,20;30,40] and α=.25,β=.5, the result is 22.5.
 Subpixel tracking uses interpolation because predicted locations need not be integers.
 
-## Worked examples
+## Structure from motion
 
-`report.pdf` contains the complete derivations, measured-pixel comparisons for both
-videos, numerical normal equations, and a four-view planar reconstruction.
-`measurements.csv` contains independent visual annotations in the 640x360 images.
-They are approximate (about 1–2 pixels), not exact ground truth. The beak example
-is retained as a failure case. Run `validate.py` to reproduce all calculations.
+Orthographic Tomasi-Kanade factorization (FPCV-4-4): W = MS with centroid-subtracted
+image coordinates; rank(W) <= 2 for a plane, so W = U1 S1 V1^T with two singular values,
+M = U1 S1^(1/2) Q, S = Q^-1 S1^(1/2) V1^T, and Q from |i_f| = |j_f| = 1, i_f . j_f = 0
+(the out-of-plane parts of i_f, j_f are extra unknowns), solved by Newton's method.
 
-Part B is explicitly **simulated**, with orthographic cameras, known scale, and a
-front-parallel first view. It uses centering and rank-2 SVD from the SfM lecture,
-then fixes the planar metric using that known first camera. It does not recover
-unknown general camera poses or nonzero depth. Run `sfm.py` for its images, camera
-parameters, matrices, and boundary reconstruction. Real captured views and their
-camera measurements must be supplied if the instructor requires photographs.
-
-References: Nayar (2025), *Optical Flow*, FPCV-4-3 (Lucas-Kanade and coarse-to-fine
-sections), and *Structure from Motion*, FPCV-4-4, pp. 2–15.
+`answers.pdf` contains the derivations, worked numbers, figures, and limitations.
+Run `validate.py` and `sfm.py` to reproduce every number.
