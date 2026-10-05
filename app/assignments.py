@@ -75,6 +75,15 @@ class Assignment(object):
 
 ASSIGNMENTS = [
     Assignment(
+        slug="module-6", number=6,
+        title="Optical Flow and Motion Tracking",
+        subtitle="30-second flow videos and consecutive frame coordinates",
+        path=os.path.join("week_6", "module6"), module="modules.module6",
+        summary="Visualize sparse optical flow in any local video and inspect "
+                "Lucas-Kanade point coordinates in two consecutive frames.",
+        parts=["Optical flow"],
+    ),
+    Assignment(
         slug="module-2",
         number=2,
         title="Camera Calibration and Real-World Measurement",
