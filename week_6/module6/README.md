@@ -30,11 +30,36 @@ Chosen videos:
 
 Samples are silent, 640-pixel-wide MP4s retaining the source frame rates.
 
-Use local video files; OpenCV cannot read YouTube watch-page URLs. Run each video
-separately. Compare corresponding corners manually in the two exported frames to
-validate predicted positions. The derivation and bilinear interpolation are in
-`theory.md`. Final PDF, screen recording and Part B's four-view example remain to
-be completed with actual footage/images and measurements.
+## Validation and four-view example
+
+Bundled samples include pixel validation against approximate visual annotations in
+`measurements.csv`. Uploaded videos have no supplied annotations. The two-frame
+figures, errors, and normal-equation matrices are downloadable in the app.
+
+The **Run four-view example** button reconstructs a simulated planar L-shaped card.
+It uses the slides' centering and SVD with rank 2, a known front-parallel first camera,
+and a scale of 70 pixels/cm. It exports four images, camera settings and positions,
+all calculation matrices, and the reconstructed boundary. This is not captured data
+or general uncalibrated 3D reconstruction. See `report.pdf` for the assumptions.
+
+Reproduce the report figures and results from the repository root:
+
+```bash
+python week_6/module6/validate.py penguins --out week_6/module6/output/penguins
+python week_6/module6/validate.py marble_race --out week_6/module6/output/marble_race
+python week_6/module6/sfm.py --out week_6/module6/output/structure
+cd week_6/module6
+pdflatex report.tex
+```
+
+For measured four-view coordinates, use `sfm.py --input data.json --out output`.
+The JSON requires `points` (4 views × N ordered boundary points × [x,y]) and
+`scale` (pixels per object unit); the first view must be front-parallel and all views
+must share the scale. Supply the actual photographs and camera information alongside
+that data. The simulated camera positions are inputs, not recovered distances.
+
+`report.pdf` includes calculations, figures, sources, and limitations. A recording
+of the running app is still needed for the classroom submission. If captured images
+are required for Part B, replace the explicitly simulated example with your four views.
 
 References: Nayar (2025), *Optical Flow*, FPCV-4-3; *Structure from Motion*, FPCV-4-4.
-OpenCV: https://docs.opencv.org/4.x/d4/dee/tutorial_optical_flow.html

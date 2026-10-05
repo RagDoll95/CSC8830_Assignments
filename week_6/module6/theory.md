@@ -27,26 +27,20 @@ This interpolates horizontally in two rows, then vertically between them.
 For neighboring values [10,20;30,40] and α=.25,β=.5, the result is 22.5.
 Subpixel tracking uses interpolation because predicted locations need not be integers.
 
-## Validation and interpretation
+## Worked examples
 
-For each 30-second video, compare several corresponding corners in the exported first
-and second frames against `points.csv` rows with frame=0. Record measured and predicted
-positions and endpoint error sqrt((xpred-xactual)²+(ypred-yactual)²). Independently
-measured positions are needed; tracker output alone is not ground truth.
+`report.pdf` contains the complete derivations, measured-pixel comparisons for both
+videos, numerical normal equations, and a four-view planar reconstruction.
+`measurements.csv` contains independent visual annotations in the 640x360 images.
+They are approximate (about 1–2 pixels), not exact ground truth. The beak example
+is retained as a failure case. Run `validate.py` to reproduce all calculations.
 
-Arrows show apparent direction and displacement in pixels/frame. Multiplying by FPS
-gives pixels/second, not real-world speed. Camera motion and lighting changes affect
-flow. Cuts, occlusion, blur and low texture can produce failures. Include actual frames
-and coordinate examples to support observations in the report.
-
-## Part B: four-view example
-
-Capture four overlapping views of a stationary textured flat object, such as a book
-cover. Record image size, object dimensions, camera calibration and camera positions.
-The SfM slides center tracked coordinates, construct W (8×N for four views), and use
-SVD factorization W≈MS with orthonormality constraints on camera rows. A planar object
-has centered rank at most 2, so do not assume unrestricted full-rank 3D reconstruction.
-Actual images and their numerical calculations are still needed for this exercise.
+Part B is explicitly **simulated**, with orthographic cameras, known scale, and a
+front-parallel first view. It uses centering and rank-2 SVD from the SfM lecture,
+then fixes the planar metric using that known first camera. It does not recover
+unknown general camera poses or nonzero depth. Run `sfm.py` for its images, camera
+parameters, matrices, and boundary reconstruction. Real captured views and their
+camera measurements must be supplied if the instructor requires photographs.
 
 References: Nayar (2025), *Optical Flow*, FPCV-4-3 (Lucas-Kanade and coarse-to-fine
-sections), and *Structure from Motion*, FPCV-4-4. Lucas & Kanade (1981), IJCAI, 674–679.
+sections), and *Structure from Motion*, FPCV-4-4, pp. 2–15.
