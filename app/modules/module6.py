@@ -14,6 +14,7 @@ if ASSIGNMENT.dir not in sys.path:
 from motion import process_video
 bp = Blueprint('module6', __name__)
 NAV = [('module6.index', 'Optical flow', 'A')]
+SAMPLES = {'penguins': 'penguins.mp4', 'marble_race': 'marble_race.mp4'}
 
 
 @bp.route('/', methods=['GET', 'POST'])
@@ -25,15 +26,22 @@ def index():
         folder.mkdir()
         try:
             upload = request.files.get('video')
-            if not upload or not upload.filename:
-                raise ValueError('Choose a video file.')
-            suffix = Path(secure_filename(upload.filename)).suffix.lower()
-            if suffix not in {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'}:
-                raise ValueError('Use a video file such as MP4 or AVI.')
-            source = folder / ('input' + suffix)
-            upload.save(source)
-            video = process_video(source, folder, float(request.form.get('start', 0)))
-            source.unlink()
+            if upload and upload.filename:
+                suffix = Path(secure_filename(upload.filename)).suffix.lower()
+                if suffix not in {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'}:
+                    raise ValueError('Use a video file such as MP4 or AVI.')
+                source = folder / ('input' + suffix)
+                upload.save(source)
+                start = float(request.form.get('start', 0))
+            else:
+                sample = request.form.get('sample', 'penguins')
+                if sample not in SAMPLES:
+                    raise ValueError('Choose a sample video.')
+                source = Path(ASSIGNMENT.dir) / SAMPLES[sample]
+                start = 0
+            video = process_video(source, folder, start)
+            if upload and upload.filename:
+                source.unlink()
             result = {'run': run, 'video': video}
         except (ValueError, cv2.error) as exc:
             shutil.rmtree(folder)
