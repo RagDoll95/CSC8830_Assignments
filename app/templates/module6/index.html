@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Module 6 — Optical Flow{% endblock %}
+{% block content %}
+<h1>Optical flow</h1>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+<form class="panel" method="post" enctype="multipart/form-data">
+<label for="video">Video</label>
+<input id="video" name="video" type="file" accept=".mp4,.avi,.mov,.mkv,.webm,.m4v" required>
+<label for="start">Start time (seconds)</label>
+<input id="start" name="start" type="number" min="0" step="0.1" value="0" required>
+<button type="submit">Process 30 seconds</button>
+</form>
+{% if result %}
+<p>{% for name,label in [(result.video,'Flow video'),('points.csv','Point coordinates'),('frame0.png','First frame'),('frame1.png','Second frame'),('pair_flow.png','Flow overlay')] %}
+<a href="{{ url_for('module6.output',run=result.run,name=name) }}" download>{{ label }}</a><br>
+{% endfor %}</p>
+{% endif %}
+{% endblock %}
