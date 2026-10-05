@@ -1,5 +1,8 @@
 """Run: python week_6/module6/motion.py video.mp4 --out output --start 0
 Requires: pip install -r requirements.txt. Processes 30 seconds of sparse optical flow.
+Videos: https://www.youtube.com/watch?v=fdk7X4LrgS4
+        https://www.youtube.com/watch?v=0sHu99vdz-A
+Use local copies of these videos as input.
 """
 import argparse
 import csv
