@@ -48,3 +48,12 @@ week_2/module2/          Module 2's own code: calibration, measurement, validati
 ## Module 4 — Human boundary detection
 
 Open `/module-4/` to upload an RGB or thermal image and run the fixed OpenCV Canny/contour pipeline. See [week_4/module4/README.md](week_4/module4/README.md) for CLI usage, parameters, and limitations.
+
+## Module 7 — Stereo object and room measurement
+
+Open `/module-7/` for calibrated stereo object dimensions and `/module-7/room` for
+room dimensions from two video frames. Use the same calibrated camera translated
+horizontally by a measured baseline without rotation. See
+[week_7/module7/README.md](week_7/module7/README.md) for capture instructions,
+synthetic examples, tests and submission requirements, and
+[the derivation notes](week_7/module7/derivation.md) for the handwritten Part 2.
