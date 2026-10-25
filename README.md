@@ -52,7 +52,7 @@ Open `/module-4/` to upload an RGB or thermal image and run the fixed OpenCV Can
 ## Module 7 — Stereo object and room measurement
 
 Open `/module-7/` for calibrated stereo object dimensions and `/module-7/room` for
-room dimensions from two video frames. Use the same calibrated camera translated
+room dimensions from a video, measuring each edge from the stereo pair of stops that faces it. Use the same calibrated camera translated
 horizontally by a measured baseline without rotation. See
 [week_7/module7/README.md](week_7/module7/README.md) for capture instructions,
 synthetic examples, tests and submission requirements, and

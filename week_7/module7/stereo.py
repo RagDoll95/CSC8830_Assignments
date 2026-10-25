@@ -3,6 +3,8 @@
 Run the web UI: python app/app.py, then /module-7/.
 CLI: python week_7/module7/stereo.py --camera camera_params.yaml \
     --points points.json --baseline-mm 200 --shape rectangle
+Shapes: rectangle (4 corners), circle (2 diameter endpoints), polygon (3+
+vertices) or edge (2 endpoints of one straight distance, e.g. a room wall).
 points.json: {"left": [[u,v], ...], "right": [[u,v], ...]} in matching order.
 Requires the root requirements.txt. Both views must use the calibrated image
 size, lens and focus, with right camera translated +B along the left X axis,
@@ -18,9 +20,11 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'week_2/module2/measurement'))
-from geometry import load_params, CalibrationError  # noqa: E402
+from geometry import Camera, CalibrationError, load_params  # noqa: E402,F401
 
 DEFAULT_CAMERA = ROOT / 'week_2/module2/calibration/output/camera_params.yaml'
+SHAPES = ('rectangle', 'circle', 'polygon', 'edge')
+ROOM_LABELS = ('Width', 'Length', 'Height')
 
 
 def camera(path):
@@ -37,14 +41,14 @@ def camera(path):
 def measure(left, right, cam, baseline_mm, shape):
     """Recover each point's Z first, then measure Euclidean 3D distances."""
     a, b = np.asarray(left, dtype=float), np.asarray(right, dtype=float)
-    counts = {'rectangle': 4, 'circle': 2, 'room': 4}
-    if shape not in (*counts, 'polygon'):
-        raise ValueError('Choose rectangle, circle, polygon or room.')
+    counts = {'rectangle': 4, 'circle': 2, 'edge': 2}
+    if shape not in SHAPES:
+        raise ValueError('Choose rectangle, circle, polygon or edge.')
     if (a.ndim != 2 or a.shape[1:] != (2,) or b.shape != a.shape
             or len(a) < 2 or len(a) > 100 or not np.isfinite([a, b]).all()):
         raise ValueError('Mark matching finite pixel coordinates in both views (2 to 100 points).')
     if (shape in counts and len(a) != counts[shape]) or (shape == 'polygon' and len(a) < 3):
-        raise ValueError('Rectangle: 4 corners; circle: 2 diameter endpoints; polygon: 3+ vertices; room: 4 corners.')
+        raise ValueError('Rectangle: 4 corners; circle: 2 diameter endpoints; polygon: 3+ vertices; edge: 2 endpoints.')
     if not np.isfinite(baseline_mm) or baseline_mm <= 0:
         raise ValueError('Baseline must be a positive measured distance in millimetres.')
     for points in (a, b):
@@ -61,10 +65,8 @@ def measure(left, right, cam, baseline_mm, shape):
         raise ValueError('Vertical mismatch exceeds 3 pixels after undistortion. Check clicks or recapture without camera rotation.')
     z = baseline_mm * cam.fx / disparity
     xyz = np.column_stack((l[:, 0] * z, l[:, 1] * z, z))
-    if shape == 'room':
-        edges, labels = [(0, 1), (0, 2), (0, 3)], ['Width', 'Length', 'Height']
-    elif shape == 'circle':
-        edges, labels = [(0, 1)], ['Diameter']
+    if shape in ('circle', 'edge'):
+        edges, labels = [(0, 1)], ['Diameter' if shape == 'circle' else 'Distance']
     else:
         edges = [(i, (i + 1) % len(a)) for i in range(len(a))]
         labels = ['Width', 'Height', 'Opposite width', 'Opposite height'] if shape == 'rectangle' else [f'Edge {i+1}' for i in range(len(a))]
@@ -74,10 +76,6 @@ def measure(left, right, cam, baseline_mm, shape):
     warnings = []
     if (disparity < 10).any():
         warnings.append('Small disparity: a one-pixel click error can substantially change depth.')
-    if shape == 'room':
-        directions = (xyz[1:] - xyz[0]) / lengths[:, None]
-        if np.max(np.abs((directions @ directions.T) - np.eye(3))) > 0.2:
-            warnings.append('The three room edges are not close to perpendicular. Check the common corner and corresponding endpoints.')
     return {'shape': shape, 'baseline_mm': baseline_mm,
             'left_pixels': a.tolist(), 'right_pixels': b.tolist(),
             'disparity_px': disparity.tolist(), 'vertical_error_px': vertical_error.tolist(),
@@ -85,6 +83,29 @@ def measure(left, right, cam, baseline_mm, shape):
             'dimensions': [{'label': label, 'points': [i+1, j+1], 'mm': float(length)}
                            for label, (i, j), length in zip(labels, edges, lengths)],
             'warnings': warnings}
+
+
+def room_summary(edges: list[dict]) -> list[dict]:
+    """Combine separately measured room edges into width, length and height.
+
+    Each dimension may be measured several times, from different stereo pairs
+    of the same video. Repeats are averaged and their spread is reported so a
+    disagreeing measurement is visible.
+
+    Args:
+        edges: measured edges, each with a 'label' from ROOM_LABELS and 'mm'.
+
+    Returns:
+        One entry per measured dimension, in ROOM_LABELS order, with the
+        label, mean_mm, count and spread_mm (largest minus smallest).
+    """
+    summary = []
+    for label in ROOM_LABELS:
+        values = [edge['mm'] for edge in edges if edge['label'] == label]
+        if values:
+            summary.append({'label': label, 'mean_mm': float(np.mean(values)),
+                            'count': len(values), 'spread_mm': float(np.ptp(values))})
+    return summary
 
 
 def frame_at(path, seconds):
@@ -113,7 +134,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera', type=Path, default=DEFAULT_CAMERA)
     parser.add_argument('--points', type=Path, required=True)
     parser.add_argument('--baseline-mm', type=float, required=True)
-    parser.add_argument('--shape', choices=['rectangle', 'circle', 'polygon', 'room'], required=True)
+    parser.add_argument('--shape', choices=SHAPES, required=True)
     args = parser.parse_args()
     points = json.loads(args.points.read_text())
     print(json.dumps(measure(points['left'], points['right'], camera(args.camera), args.baseline_mm, args.shape), indent=2))

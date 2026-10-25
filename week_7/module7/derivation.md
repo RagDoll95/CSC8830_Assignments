@@ -1,125 +1,178 @@
 # Part 2 — Uncalibrated stereo derivation study notes
 
-These are typed study notes, not the final submission. Assignment 7 specifically requires this part handwritten and scanned. Work through the derivation and write it in your own notation, including the assumptions and citations.
+These are typed study notes, not the final submission. Assignment 7 requires this part handwritten and scanned. Work through the derivation and write it out in your own hand, including the assumptions and citations.
 
-## 1. Assumptions and coordinate convention
+The derivation follows the notation and conventions of the two lectures [1, 2]. Page numbers are the printed monograph pages. One step, the explicit decomposition of E, is stated but not derived in the lecture; it is marked **Beyond the lecture** and uses only elementary vector algebra.
 
-Nayar's uncalibrated stereo lecture assumes **known intrinsics** K_L and K_R, but unknown relative rotation and translation [2, pp. 2–3]. Undistort the observed pixel coordinates first. A static scene must have enough reliable, nondegenerate correspondences (at least eight for the linear method; preferably spread across different depths). Pure camera rotation provides no triangulation baseline. An entirely planar match set is degenerate for unrestricted fundamental-matrix recovery.
+## 1. Assumptions and conventions
 
-Use the left camera as the world frame. Define X_R = R X_L + t, so the projection matrices are P_L=K_L[I|0], P_R=K_R[R|t]. Here t is the left origin expressed in the right frame; the right camera center in the left frame is C_R=−Rᵀt.
+The intrinsics of both cameras are known; their relative rotation and translation are not [2, pp. 2–3]:
 
-Below the epipolar equation is **p_Rᵀ F p_L=0**. Nayar uses the transposed convention p_Lᵀ F_lecture p_R=0, so F=F_lectureᵀ. Keep the convention consistent; the recovered physical geometry is the same.
+    K_l = [[fx_l, 0, ox_l], [0, fy_l, oy_l], [0, 0, 1]],   K_r likewise.
 
-## 2. Derive the epipolar constraint
+Two views of a static scene, at least eight reliable correspondences (u_l, v_l) ↔ (u_r, v_r) [2, p. 3], and one measured length for metric scale (section 6).
 
-For homogeneous image points p_L=(u_L,v_L,1)ᵀ and p_R=(u_R,v_R,1)ᵀ, let a=K_L⁻¹p_L and b=K_R⁻¹p_R. Their third components are one. For depths λ and μ:
+x_l and x_r are the same scene point in the left and right camera frames. t is the position of the right camera in the left camera's frame; R is the orientation of the left camera in the right camera's frame [2, p. 6]:
 
-    X_L = λa
-    X_R = μb = R(λa) + t.
+    x_l = R x_r + t.                                                    (0)
 
-The three vectors b, Ra and t lie in the same epipolar plane. Their scalar triple product is zero:
+## 2. Essential matrix
 
-    bᵀ(t × Ra) = 0.
+The camera centres and the scene point span the epipolar plane. Its normal is n = t × x_l, which is perpendicular to x_l [2, p. 5]:
 
-Define the skew-symmetric cross-product matrix
+    x_l · (t × x_l) = 0.
 
-    [t]× = [[0, −tz, ty], [tz, 0, −tx], [−ty, tx, 0]].
+Write the cross product as a skew-symmetric matrix:
 
-Then E=[t]×R and bᵀEa=0. Substituting a and b gives
+    T× = [[0, −tz, ty], [tz, 0, −tx], [−ty, tx, 0]],   t × a = T× a.
 
-    p_Rᵀ K_R⁻ᵀ E K_L⁻¹ p_L = 0,
-    F = K_R⁻ᵀ E K_L⁻¹,
-    E = K_Rᵀ F K_L.
+Substitute (0) for the second x_l. Because T× t = t × t = 0 [2, p. 6]:
 
-This is the lecture's epipolar geometry expressed with the right-to-left transpose convention [2, pp. 4–8].
+    x_lᵀ T× (R x_r + t) = x_lᵀ T× R x_r = 0,
+    x_lᵀ E x_r = 0,   E = T× R.                                       (1)
 
-## 3. Estimate F from corresponding pixels
+## 3. Fundamental matrix
 
-Expanding one correspondence gives
+Perspective projection gives z_l (u_l, v_l, 1)ᵀ = K_l x_l and z_r (u_r, v_r, 1)ᵀ = K_r x_r [2, p. 7]. Hence x_lᵀ = z_l ũ_lᵀ K_l⁻ᵀ and x_r = z_r K_r⁻¹ ũ_r. Substitute into (1):
 
-    uR*uL*f11 + uR*vL*f12 + uR*f13
-    + vR*uL*f21 + vR*vL*f22 + vR*f23
-    + uL*f31 + vL*f32 + f33 = 0.
+    z_l z_r ũ_lᵀ K_l⁻ᵀ E K_r⁻¹ ũ_r = 0.
 
-Thus a row of A is
+The scene is in front of both cameras, so z_l ≠ 0 and z_r ≠ 0; divide them out [2, p. 7]:
 
-    [uR*uL, uR*vL, uR, vR*uL, vR*vL, vR, uL, vL, 1].
+    ũ_lᵀ F ũ_r = 0,   F = K_l⁻ᵀ E K_r⁻¹,   E = K_lᵀ F K_r.             (2)
 
-Stack at least eight independent rows and solve Af=0 subject to ||f||=1. If A=UΣVᵀ, f is the last column of V (equivalently the smallest-eigenvalue eigenvector of AᵀA). Reshape f into F. This is the lecture's constrained least-squares construction [2, pp. 9–10].
+## 4. Estimate F
 
-For numerical stability, first center each set of image points and scale its mean distance from the origin to √2, using transforms T_L,T_R. Solve for F_n from normalized coordinates. Enforce rank two by replacing the smallest singular value of F_n with zero, then denormalize F=T_Rᵀ F_n T_L. Reject bad matches rather than trust every pair. These are numerical refinements of the linear derivation.
+Expanding (2) for correspondence i gives one linear equation [2, p. 9]:
 
-## 4. Recover pose and establish metric scale
+    (f11 u_r + f12 v_r + f13) u_l + (f21 u_r + f22 v_r + f23) v_l + f31 u_r + f32 v_r + f33 = 0.
 
-Compute E=K_Rᵀ F K_L. Let E=U diag(s1,s2,s3) Vᵀ. Enforce the essential-matrix structure with singular values (s,s,0), where s=(s1+s2)/2. Choose signs of the zero-singular-value columns so U and V are proper rotations. Set
+So each match contributes the row
 
-    W = [[0,−1,0], [1,0,0], [0,0,1]].
+    a_i = [u_l u_r, u_l v_r, u_l, v_l u_r, v_l v_r, v_l, u_r, v_r, 1].
 
-The candidate poses are R=UWVᵀ or UWᵀVᵀ, and t direction = ±U[:,3] (third column). Choose the candidate for which triangulated points are in front of both cameras. E fixes the **direction**, not the physical magnitude, of t [2, pp. 9–10, scale ambiguity].
+Stack the rows into A (m × 9) to get A f = 0. F acts on homogeneous coordinates, so F and kF describe the same geometry. Fix the scale with ‖f‖² = 1. That leaves eight unknowns, so at least eight matches are needed [2, p. 9].
 
-If baseline B is measured in mm, set t=B*t_hat where ||t_hat||=1. Alternatively triangulate at unit baseline and use a known reference length L_ref:
+Minimise ‖A f‖² subject to ‖f‖² = 1 with L(f, λ) = fᵀAᵀA f − λ(fᵀf − 1). Setting ∂L/∂f = 0 gives AᵀA f = λ f. At such an f, ‖A f‖² = λ, so f is the eigenvector of AᵀA with the smallest eigenvalue [2, p. 10; 1, p. 9]. Rearrange f into F.
 
-    s = L_ref / ||X_ref2_hat − X_ref1_hat||,
-    X_i = s X_i_hat,     t = s t_hat.
+## 5. Recover t and R from E
 
-Without B or a known reference distance, the reconstruction has an arbitrary overall scale and cannot yield millimetres. If intrinsics are also unknown, general two-view reconstruction has projective ambiguity, so one reference length alone does not make it metric; extra calibration or metric constraints are needed.
+Compute E = K_lᵀ F K_r [2, p. 10]. It has the arbitrary scale (and sign) of F. The lecture states that T× and R can be decoupled from E using SVD [2, pp. 6, 10].
 
-## 5. Recover each endpoint's depth
+**Beyond the lecture.** The following derivation uses only facts the lectures give (T× is skew-symmetric, R R^T = I [1, p. 5], t × t = 0) plus standard cross-product identities.
 
-From μb=λRa+t, rearrange
+*Translation.* Since R Rᵀ = I, E Eᵀ = T× T×ᵀ. Multiplying out:
 
-    G q = t,    G = [−Ra  b],    q = [λ, μ]ᵀ.
+    T× T×ᵀ = [[ty²+tz², −tx ty, −tx tz], [−tx ty, tx²+tz², −ty tz], [−tx tz, −ty tz, tx²+ty²]]
+           = ‖t‖² I − t tᵀ.
 
-For noisy rays, use least squares q=G⁺t, computed by SVD. If G has full column rank, equivalently q=(GᵀG)⁻¹Gᵀt. Both depths must be positive. Because a_z=1, λ is the left camera's axial depth Z. Then
+Its trace is 2‖t‖², so rescale E until tr(E Eᵀ) = 2. Then ‖t‖ = 1, written t̂, and
 
-    X_L = λa = (λa_x, λa_y, λ)ᵀ.
+    t̂ t̂ᵀ = I − E Eᵀ.
 
-This recovers depth first, then location, as required [2, pp. 13–14]. Sparse endpoint correspondences suffice for measurement; dense correspondence is only needed for a full surface reconstruction.
+Take the column with the largest diagonal entry and divide it by that entry's square root. Equivalently, t̂ is the eigenvector of E Eᵀ with eigenvalue 0, because E Eᵀ t̂ = t̂ − t̂ (t̂ᵀ t̂) = 0.
 
-## 6. Calculate dimensions
+*Rotation.* Let e_i be the columns of E and r_i the columns of R. From E = T× R, e_i = t̂ × r_i. Define w_i = e_i × t̂. Then
 
-For every measured edge joining reconstructed endpoints i and j:
+    w_i = (t̂ × r_i) × t̂ = r_i − (t̂ · r_i) t̂,
 
-    L_ij = sqrt((Xi−Xj)^2 + (Yi−Yj)^2 + (Zi−Zj)^2).
+which is the part of r_i perpendicular to t̂. For (i, j, k) cyclic, w_j × w_k is parallel to t̂ with length t̂ · (r_j × r_k) = t̂ · r_i, using r_j × r_k = r_i for a rotation. Therefore
 
-Rectangle vertices 1,2,3,4 in boundary order: width=L12, height=L23; compare L34 and L41 as opposite-side consistency checks. Circle: use two true opposite diameter endpoints; diameter=L12. Polygon: report L12,L23,...,Ln1. Each endpoint can have a different depth; a single common Z is not assumed.
+    r_1 = w_1 + w_2 × w_3,   r_2 = w_2 + w_3 × w_1,   r_3 = w_3 + w_1 × w_2.
 
-## 7. Worked numerical example and calibrated special case
+*Choosing the solution.* The signs of E and t̂ are both unknown, which gives four (R, t) candidates. Keep the one that puts a triangulated point in front of both cameras, z_l > 0 and z_r > 0 [2, p. 7].
 
-Take K_L=K_R=diag(800,800,1), principal point (0,0), R=I, and a measured baseline B=200 mm. The right camera lies at (200,0,0), so t=(−200,0,0). Consequently
+## 6. Metric scale
 
-    E = [[0,0,0], [0,0,200], [0,−200,0]],
-    F = K⁻ᵀ E K⁻¹ = [[0,0,0], [0,0,0.25], [0,−0.25,0]].
+If the world and the stereo system are both scaled by the same factor, the images do not change [2, p. 9; 1, p. 9]. Two images therefore give t, and every length, only up to scale. Fix the scale with one physical measurement:
 
-The epipolar equation becomes 0.25(v_R−v_L)=0, i.e. matching rows. Consider four corresponding corners:
+- **Measured baseline:** tape-measure the camera displacement B and set t = B t̂.
+- **Reference length:** triangulate with t = t̂. If two points with known separation L_ref reconstruct ℓ_ref apart, multiply every coordinate by s = L_ref / ℓ_ref.
 
-| Corner | Left (u,v) | Right (u,v) |
-|---|---|---|
-| 1 | (0,0) | (−80,0) |
-| 2 | (160,0) | (80,0) |
-| 3 | (160,80) | (80,80) |
-| 4 | (0,80) | (−80,80) |
+Without either, uncalibrated stereo gives shape and proportions but not millimetres.
 
-Coordinates here are principal-point-centered, so negative values are allowed. For corner 2, a=(0.2,0,1), b=(0.1,0,1). The ray equations give
+## 7. Depth by triangulation
 
-    −0.2λ + 0.1μ = −200,
-    −λ + μ = 0,
-    μ = λ,  −0.1λ = −200,
-    λ = μ = 2000 mm.
+The left imaging equation becomes ũ_l ≡ P_l x̃_r with P_l = K_l [R | t]. The right one is ũ_r ≡ M_int_r x̃_r with M_int_r = [K_r | 0] [2, p. 14]. Cross-multiplying the four ratio equations gives four linear equations in three unknowns [2, p. 15]:
 
-Hence corner 2 is (400,0,2000). All four disparities are d=80 px, so for each point Z=800*200/80=2000 mm. The reconstructed corners are
+    [ u_r m31 − m11   u_r m32 − m12   u_r m33 − m13 ]           [ m14 − u_r m34 ]
+    [ v_r m31 − m21   v_r m32 − m22   v_r m33 − m23 ] [x_r]     [ m24 − v_r m34 ]
+    [ u_l p31 − p11   u_l p32 − p12   u_l p33 − p13 ] [y_r]  =  [ p14 − u_l p34 ]
+    [ v_l p31 − p21   v_l p32 − p22   v_l p33 − p23 ] [z_r]     [ p24 − v_l p34 ]
 
-    X1=(0,0,2000), X2=(400,0,2000),
-    X3=(400,200,2000), X4=(0,200,2000).
+    A x_r = b   ⇒   x_r = (AᵀA)⁻¹ Aᵀ b.
 
-Width=sqrt(400²)=400 mm; height=sqrt(200²)=200 mm. Opposite edges agree. A diameter between X1 and X3 would be sqrt(400²+200²)=447.214 mm **only if those were physically opposite points on a circle**; this rectangle's diagonal is not automatically a circle diameter.
+The depth is z_r. The left-camera depth z_l is the third component of R x_r + t. If an object corner is hard to match, search along its epipolar line (a, b, c) = ũ_lᵀ F, which reduces correspondence to a 1D search [2, pp. 11–13].
 
-This example verifies the triangulation and scale steps after pose recovery; its four coplanar points are not enough to estimate an unrestricted F. General pose recovery must use the nondegenerate correspondence set from Step 3. In the parallel-camera case, subtracting u_R=fx(X−B)/Z+cx from u_L=fx*X/Z+cx immediately gives d=fx*B/Z and Z=fx*B/d, the calibrated method implemented for Parts 1 and 3 [1, p. 12].
+## 8. Object dimensions
+
+Express all endpoints in the same frame:
+
+    L_ij = sqrt((x_i − x_j)² + (y_i − y_j)² + (z_i − z_j)²).
+
+- **Rectangle**, corners 1–4 in order: width = L12 and height or length = L23. L34 and L41 are consistency checks.
+- **Circle:** two diametrically opposite physical points give diameter = L12.
+- **Polygon:** L12, L23, …, Ln1.
+
+Each corner has its own depth; no equal-depth assumption is used.
+
+## 9. Check: the calibrated special case
+
+With R = I and t = (b, 0, 0)ᵀ [1, p. 12]:
+
+    E = [[0, 0, 0], [0, 0, −b], [0, b, 0]],   x_lᵀ E x_r = b (z_l y_r − y_l z_r) = 0.
+
+With z_l = z_r this gives v_l = v_r, the scan-line constraint [1, p. 13]. Subtracting u_r − o_x = f_x (x − b)/z from u_l − o_x = f_x x/z gives
+
+    z = b f_x / (u_l − u_r),
+
+which is the calibrated method implemented for Parts 1 and 3 [1, p. 12].
+
+## 10. Worked example
+
+K_l = K_r = [[1000, 0, 640], [0, 1000, 360], [0, 0, 1]]. The camera move is unknown except for its tape-measured length, B = 400 mm. Pixels are given to 0.01 px. Corners 1–4 are a rectangle; points 5–8 are other scene features, so the eight points are not coplanar.
+
+| i | u_l | v_l | u_r | v_r |
+|---|---|---|---|---|
+| 1 | 690.00 | 260.00 | 483.38 | 264.46 |
+| 2 | 885.76 | 275.25 | 728.60 | 275.29 |
+| 3 | 885.76 | 444.75 | 728.60 | 444.71 |
+| 4 | 690.00 | 460.00 | 483.38 | 455.54 |
+| 5 | 640.00 | 467.14 | 542.71 | 463.51 |
+| 6 | 973.33 | 193.33 | 710.78 | 193.94 |
+| 7 | 733.75 | 360.00 | 666.33 | 360.00 |
+| 8 | 947.69 | 398.46 | 823.33 | 399.10 |
+
+1. **One row of A.** For match 1: a_1 = [333532.2, 182477.4, 690, 125678.8, 68759.6, 260, 483.38, 264.46, 1].
+2. **F.** The eigenvector solve is numerical. Scaled to f33 = 1:
+
+       F ≈ [[5.698e−9, 1.777e−8, −1.238e−5], [3.755e−6, 2.204e−8, 1.819e−2], [−1.354e−3, −2.096e−2, 1]].
+
+   Check: the epipolar line of corner 1 is (a, b, c) = (−3.74e−4, −2.0945e−2, 5.7199). At u_r = 483.38 it gives v_r = 264.46, which matches.
+3. **E and t̂.** E = KᵀFK, normalised to tr(EEᵀ) = 2 and rounded to 4 d.p.:
+
+       E ≈ [[0, 0, 0], [0.1793, 0, 0.9836], [0, −1.0002, 0]],
+       I − EEᵀ ≈ diag(1, 0.0004, −0.0004),   so t̂ = ±(1, 0, 0).
+
+4. **R.** Using −E and t̂ = (1, 0, 0): w_1 = (0, 0, 0.1793), w_2 = (0, 1.0002, 0), w_3 = (0, 0, 0.9836). Then
+
+       R ≈ [[0.9838, 0, −0.1793], [0, 1.0002, 0], [0.1793, 0, 0.9836]],
+
+   a rotation of about 10.3° about y.
+5. **Choose the candidate.** At unit baseline, corner 1 gives (z_r, z_l) = (+3.50, −3.35) for (+E, +t̂), (−2.62, −2.51) for (+E, −t̂), (+2.62, +2.51) for (−E, +t̂) and (−3.50, +3.35) for (−E, −t̂). Only (−E, +t̂) has both depths positive.
+6. **Scale.** t = 400 t̂ = (400, 0, 0) mm.
+7. **Triangulate corner 1.**
+
+       P_l = K[R | t] = [[1098.55, 0, 450.17, 400000], [64.55, 1000.2, 354.10, 0], [0.1793, 0, 0.9836, 0]],
+       A = [[−1000, 0, −156.62], [0, −1000, −95.54], [−974.83, 0, 228.52], [−17.93, −1000.2, −98.36]],
+       b = (0, 0, 400000, 0)ᵀ.
+
+   Solving gives x_r = (−164.35, −100.25, 1049.33) mm and x_l = R x_r + t = (50.13, −100.27, 1002.66) mm, so the depth is Z ≈ 1.00 m from the left camera.
+8. **Corners 2–4.** Repeating the same steps gives depths z_r of 1184.12, 1184.12 and 1049.33 mm. The rectangle is tilted.
+9. **Size.** L12 = sqrt(269.26² + 0.04² + 134.79²) ≈ 301.1 mm and L23 ≈ 200.6 mm. The generating geometry was 300 × 200 mm. Most of the 0.4% error comes from rounding E to 4 d.p.; carried at full precision, the result is 300.17 × 200.08 mm.
 
 ## References
 
-[1] Nayar, S. K. (2025). *Camera Calibration*. FPCV-4-1, Columbia University, pp. 12–13. https://cave.cs.columbia.edu/Statics/monographs/Camera%20Calibration%20FPCV-4-1.pdf
+[1] Nayar, S. K. (2025). *Camera Calibration*. FPCV-4-1, Columbia University. https://cave.cs.columbia.edu/Statics/monographs/Camera%20Calibration%20FPCV-4-1.pdf
 
-[2] Nayar, S. K. (2025). *Uncalibrated Stereo*. FPCV-4-2, Columbia University, pp. 2–14. https://cave.cs.columbia.edu/Statics/monographs/Uncalibrated%20Stereo%20FPCV-4-2.pdf
-
-[3] Hartley, R., & Zisserman, A. (2004). *Multiple View Geometry in Computer Vision* (2nd ed.), Cambridge University Press, chapters 9, 11 and 12 (normalized eight-point estimation, essential-matrix decomposition and triangulation). Listed as further reading in the lecture.
+[2] Nayar, S. K. (2025). *Uncalibrated Stereo*. FPCV-4-2, Columbia University. https://cave.cs.columbia.edu/Statics/monographs/Uncalibrated%20Stereo%20FPCV-4-2.pdf

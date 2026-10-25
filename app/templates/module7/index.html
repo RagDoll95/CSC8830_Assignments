@@ -2,46 +2,78 @@
 {% block title %}Module 7 — Stereo measurement{% endblock %}
 {% block content %}
 <h1>{{ 'Room dimensions from video' if room else 'Object dimensions using calibrated stereo' }}</h1>
-<p class="lead">Estimate depth from two views, then measure distances between reconstructed 3D corners.</p>
+<p class="lead">Estimate depth from two views, then measure distances between reconstructed 3D points.</p>
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 <div class="panel">
 <p>Use the <strong>same calibrated camera</strong> at two positions. Move it to the right by a measured baseline,
 keeping its orientation, height, lens, focus and zoom fixed. The scene must stay still.
 Use a straight rail or a rigid guide; a handheld pan does not satisfy this model.</p>
-{% if room %}<p>Record a stationary view, slide the camera right, then record a second stationary view.
-Choose one timestamp at each stop. Disable digital stabilization and calibrate in the actual video mode.
-Both frames must show one room corner and the three endpoints of its width, length and height edges.</p>{% endif %}
+{% if room %}<p>A phone camera cannot see a whole room at once: from inside a rectangular room, the two corners
+next to any corner are at least 90° apart. So measure <strong>each edge separately</strong>. In one video,
+face a wall, record a stationary view, slide the camera right by the baseline, record a second stationary view,
+then turn to the next wall and repeat. For each edge, choose the timestamps of the two stops that face it.
+Disable digital stabilization and calibrate in the actual video mode.</p>{% endif %}
 <p class="small">Z = f<sub>x</sub>B / (u<sub>L</sub> − u<sub>R</sub>), after correcting lens distortion.
 The app checks vertical alignment, but passing that check does not prove the cameras are parallel.</p>
 </div>
+{% if not (room and pair) %}
 <form method="post" enctype="multipart/form-data" class="panel">
-<h2>Load {{ 'video frames' if room else 'two photos' }}</h2>
+<h2>Load {{ 'room video' if room else 'two photos' }}</h2>
 <label>Calibration YAML (optional; defaults to your Module 2 phone calibration)
 <input type="file" name="camera" accept=".yaml,.yml"></label>
 <p class="small">Calibration must match the capture mode and exact image resolution. The existing Module 2 calibration
 is 3024 × 4032; it must not be used for cropped or stabilized phone video. Use Module 2 to calibrate checkerboard frames from your video mode.</p>
-<label>Measured sideways baseline (mm) <input type="number" name="baseline" min="0.001" max="99999" step="any" required></label>
+<label>Measured sideways baseline (mm){% if room %}, used by default for every pair{% endif %}
+<input type="number" name="baseline" min="0.001" max="99999" step="any" required></label>
 {% if room %}
+<input type="hidden" name="action" value="upload">
 <label>Room video <input type="file" name="video" accept="video/*" required></label>
-<label>Left-view time (seconds) <input type="number" name="left_time" value="0" min="0" step="any" required></label>
-<label>Right-view time (seconds) <input type="number" name="right_time" value="2" min="0" step="any" required></label>
 {% else %}
 <label>Shape <select name="shape"><option value="rectangle">Rectangle</option><option value="circle">Circle</option><option value="polygon">Polygon</option></select></label>
 <label>Left photo <input type="file" name="left" accept=".jpg,.jpeg,.png" required></label>
 <label>Right photo <input type="file" name="right" accept=".jpg,.jpeg,.png" required></label>
 {% endif %}
-<button type="submit">Load views</button>
+<button type="submit">{{ 'Load video' if room else 'Load views' }}</button>
 </form>
-{% if pair %}
+{% endif %}
+{% if room and pair %}
+<section class="panel"><h2>Measured edges</h2>
+{% if pair.edges %}
+<table><thead><tr><th>#</th><th>Dimension</th><th>Stops (s)</th><th>Baseline (mm)</th><th>Millimetres</th><th>Warnings</th><th></th></tr></thead><tbody>
+{% for edge in pair.edges %}<tr><td>{{ loop.index }}</td><td>{{ edge.label }}</td><td>{{ edge.times_s|join(' → ') }}</td>
+<td>{{ edge.baseline_mm }}</td><td>{{ '%.1f'|format(edge.mm) }}</td><td>{{ edge.warnings|join(' ') }}</td>
+<td><form method="post"><input type="hidden" name="run" value="{{ pair.run }}"><input type="hidden" name="action" value="remove">
+<input type="hidden" name="index" value="{{ loop.index0 }}"><button type="submit">Remove</button></form></td></tr>{% endfor %}
+</tbody></table>
+<h3>Room dimensions</h3>
+<table><thead><tr><th>Dimension</th><th>Mean (m)</th><th>Measurements</th><th>Spread (mm)</th></tr></thead><tbody>
+{% for d in summary %}<tr><td>{{ d.label }}</td><td>{{ '%.3f'|format(d.mean_mm / 1000) }}</td><td>{{ d.count }}</td><td>{{ '%.1f'|format(d.spread_mm) }}</td></tr>{% endfor %}
+</tbody></table>
+<p><a href="{{ url_for('module7.output', run=pair.run, name='result.json') }}" download>Download calculations (JSON)</a></p>
+<p class="small">Dimensions are estimates. Compare with a tape measure; a large spread between repeats means one measurement is wrong.</p>
+{% else %}<p>No edges measured yet.</p>{% endif %}
+</section>
+<form method="post" class="panel">
+<h2>{{ 'Measure another edge' if pair.edges else 'Measure an edge' }}</h2>
+<input type="hidden" name="run" value="{{ pair.run }}"><input type="hidden" name="action" value="pair">
+<label>Dimension <select name="label">{% for label in labels %}<option value="{{ label }}"{% if pair.pair and pair.pair.label == label %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Left-position stop (seconds) <input type="number" name="left_time" value="{{ pair.pair.times_s[0] if pair.pair else 0 }}" min="0" step="any" required></label>
+<label>Right-position stop (seconds) <input type="number" name="right_time" value="{{ pair.pair.times_s[1] if pair.pair else 2 }}" min="0" step="any" required></label>
+<label>Baseline for this pair (mm) <input type="number" name="baseline" value="{{ pair.baseline_mm }}" min="0.001" max="99999" step="any" required></label>
+<button type="submit">Load frames</button>
+</form>
+{% endif %}
+{% if pair and (not room or pair.pair) %}
 <form method="post" class="panel" id="measure-form">
 <h2>Mark corresponding points</h2>
-<p>Baseline: {{ pair.baseline_mm }} mm. Shape: {{ pair.shape }}.</p>
-{% if room %}<p>Click <strong>1: common room corner, 2: width endpoint, 3: length endpoint, 4: height endpoint</strong> in each view.
-These must be actual room-edge endpoints, not arbitrary nearby features.</p>
-{% elif pair.shape == 'circle' %}<p>Click the same two endpoints of a true diameter in both views.
+{% if room %}<p>{{ pair.pair.label }} edge, stops {{ pair.pair.times_s|join(' s and ') }} s, baseline {{ pair.pair.baseline_mm }} mm.
+Click the <strong>same two endpoints</strong> of the edge in both frames, for example the two floor corners of a wall,
+or the floor and ceiling ends of a vertical corner.</p>
+{% else %}<p>Baseline: {{ pair.baseline_mm }} mm. Shape: {{ pair.shape }}.</p>
+{% if pair.shape == 'circle' %}<p>Click the same two endpoints of a true diameter in both views.
 For a tilted circle, the apparent leftmost and rightmost silhouette points may not be a true corresponding diameter; use physical marks.</p>
 {% else %}<p>Click each vertex in order around the outline, starting at the same vertex in both views.
-For a rectangle use four corners, with the width edge first.</p>{% endif %}
+For a rectangle use four corners, with the width edge first.</p>{% endif %}{% endif %}
 <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
 {% for side in ['left','right'] %}<div><h3>{{ side|capitalize }} view</h3>
 <canvas id="{{ side }}" style="width:100%;height:auto;cursor:crosshair;border:1px solid #aaa" aria-label="Mark {{ side }} view points"></canvas>
@@ -50,7 +82,7 @@ For a rectangle use four corners, with the width edge first.</p>{% endif %}
 </div>
 <input type="hidden" name="action" value="measure"><input type="hidden" name="run" value="{{ pair.run }}">
 <input type="hidden" name="points" id="points"><p id="point-error" class="err" hidden></p>
-<button type="submit">Calculate dimensions</button>
+<button type="submit">{{ 'Measure edge' if room else 'Calculate dimensions' }}</button>
 </form>
 {% endif %}
 {% if result %}
@@ -66,15 +98,16 @@ For a rectangle use four corners, with the width edge first.</p>{% endif %}
 {% endif %}
 <p class="small">References: Shree K. Nayar,
 <a href="https://cave.cs.columbia.edu/Statics/monographs/Camera%20Calibration%20FPCV-4-1.pdf">Camera Calibration</a>, pp. 12–13;
-<a href="https://cave.cs.columbia.edu/Statics/monographs/Uncalibrated%20Stereo%20FPCV-4-2.pdf">Uncalibrated Stereo</a>, pp. 2–14 (2025).
+<a href="https://cave.cs.columbia.edu/Statics/monographs/Uncalibrated%20Stereo%20FPCV-4-2.pdf">Uncalibrated Stereo</a> (2025).
 </p>
 {% endblock %}
 {% block scripts %}
-{% if pair %}<script>
+{% if pair and (not room or pair.pair) %}<script>
 const points = {{ {'left': result.left_pixels, 'right': result.right_pixels}|tojson if result else '{"left":[],"right":[]}'|safe }};
-const shape = {{ pair.shape|tojson }};
-const counts = {rectangle:4, circle:2, room:4};
+const shape = {{ ('edge' if room else pair.shape)|tojson }};
+const counts = {rectangle:4, circle:2, edge:2};
 const loaded = {};
+const version = Date.now();
 for (const side of ['left','right']) {
   const canvas = document.getElementById(side), ctx = canvas.getContext('2d'), img = new Image();
   function draw() {
@@ -88,7 +121,7 @@ for (const side of ['left','right']) {
     document.getElementById('count-'+side).textContent = points[side].length+' points';
   }
   img.onload = () => { canvas.width=Math.min(1000,img.naturalWidth); canvas.height=Math.round(img.naturalHeight*canvas.width/img.naturalWidth); loaded[side]=true; draw(); };
-  img.src = {{ url_for('module7.output', run=pair.run, name='left.png')|tojson }}.replace('left.png', side+'.png');
+  img.src = {{ url_for('module7.output', run=pair.run, name='left.png')|tojson }}.replace('left.png', side+'.png') + '?v=' + version;
   canvas.addEventListener('click',event => {
     if (!loaded[side] || points[side].length >= (counts[shape] || 100)) return;
     const rect=canvas.getBoundingClientRect();
