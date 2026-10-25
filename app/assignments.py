@@ -123,6 +123,14 @@ ASSIGNMENTS = [
                 "flat object's shape from four photos by Tomasi-Kanade factorization.",
         parts=["Optical flow and tracking", "Structure from motion"],
     ),
+    Assignment(
+        slug="module-7", number=7,
+        title="Stereo Object and Room Measurement",
+        subtitle="Calibrated stereo depth and dimensions from photos or video",
+        path=os.path.join("week_7", "module7"), module="modules.module7",
+        summary="Recover depth from calibrated stereo correspondences, then measure object edges and room dimensions.",
+        parts=["Object dimensions", "Room from video"],
+    ),
 ]
 
 

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Module 7 — Stereo measurement{% endblock %}
+{% block content %}
+<h1>{{ 'Room dimensions from video' if room else 'Object dimensions using calibrated stereo' }}</h1>
+<p class="lead">Estimate depth from two views, then measure distances between reconstructed 3D points.</p>
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+<div class="panel">
+<p>Use the <strong>same calibrated camera</strong> at two positions. Move it to the right by a measured baseline,
+keeping its orientation, height, lens, focus and zoom fixed. The scene must stay still.
+Use a straight rail or a rigid guide; a handheld pan does not satisfy this model.</p>
+{% if room %}<p>A phone camera cannot see a whole room at once: from inside a rectangular room, the two corners
+next to any corner are at least 90° apart. So measure <strong>each edge separately</strong>. In one video,
+face a wall, record a stationary view, slide the camera right by the baseline, record a second stationary view,
+then turn to the next wall and repeat. For each edge, choose the timestamps of the two stops that face it.
+Disable digital stabilization and calibrate in the actual video mode.</p>{% endif %}
+<p class="small">Z = f<sub>x</sub>B / (u<sub>L</sub> − u<sub>R</sub>), after correcting lens distortion.
+The app checks vertical alignment, but passing that check does not prove the cameras are parallel.</p>
+</div>
+{% if not (room and pair) %}
+<form method="post" enctype="multipart/form-data" class="panel">
+<h2>Load {{ 'room video' if room else 'two photos' }}</h2>
+<label>Calibration YAML (optional; defaults to your Module 2 phone calibration)
+<input type="file" name="camera" accept=".yaml,.yml"></label>
+<p class="small">Calibration must match the capture mode and exact image resolution. The existing Module 2 calibration
+is 3024 × 4032; it must not be used for cropped or stabilized phone video. Use Module 2 to calibrate checkerboard frames from your video mode.</p>
+<label>Measured sideways baseline (mm){% if room %}, used by default for every pair{% endif %}
+<input type="number" name="baseline" min="0.001" max="99999" step="any" required></label>
+{% if room %}
+<input type="hidden" name="action" value="upload">
+<label>Room video <input type="file" name="video" accept="video/*" required></label>
+{% else %}
+<label>Shape <select name="shape"><option value="rectangle">Rectangle</option><option value="circle">Circle</option><option value="polygon">Polygon</option></select></label>
+<label>Left photo <input type="file" name="left" accept=".jpg,.jpeg,.png" required></label>
+<label>Right photo <input type="file" name="right" accept=".jpg,.jpeg,.png" required></label>
+{% endif %}
+<button type="submit">{{ 'Load video' if room else 'Load views' }}</button>
+</form>
+{% endif %}
+{% if room and pair %}
+<section class="panel"><h2>Measured edges</h2>
+{% if pair.edges %}
+<table><thead><tr><th>#</th><th>Dimension</th><th>Stops (s)</th><th>Baseline (mm)</th><th>Millimetres</th><th>Warnings</th><th></th></tr></thead><tbody>
+{% for edge in pair.edges %}<tr><td>{{ loop.index }}</td><td>{{ edge.label }}</td><td>{{ edge.times_s|join(' → ') }}</td>
+<td>{{ edge.baseline_mm }}</td><td>{{ '%.1f'|format(edge.mm) }}</td><td>{{ edge.warnings|join(' ') }}</td>
+<td><form method="post"><input type="hidden" name="run" value="{{ pair.run }}"><input type="hidden" name="action" value="remove">
+<input type="hidden" name="index" value="{{ loop.index0 }}"><button type="submit">Remove</button></form></td></tr>{% endfor %}
+</tbody></table>
+<h3>Room dimensions</h3>
+<table><thead><tr><th>Dimension</th><th>Mean (m)</th><th>Measurements</th><th>Spread (mm)</th></tr></thead><tbody>
+{% for d in summary %}<tr><td>{{ d.label }}</td><td>{{ '%.3f'|format(d.mean_mm / 1000) }}</td><td>{{ d.count }}</td><td>{{ '%.1f'|format(d.spread_mm) }}</td></tr>{% endfor %}
+</tbody></table>
+<p><a href="{{ url_for('module7.output', run=pair.run, name='result.json') }}" download>Download calculations (JSON)</a></p>
+<p class="small">Dimensions are estimates. Compare with a tape measure; a large spread between repeats means one measurement is wrong.</p>
+{% else %}<p>No edges measured yet.</p>{% endif %}
+</section>
+<form method="post" class="panel">
+<h2>{{ 'Measure another edge' if pair.edges else 'Measure an edge' }}</h2>
+<input type="hidden" name="run" value="{{ pair.run }}"><input type="hidden" name="action" value="pair">
+<label>Dimension <select name="label">{% for label in labels %}<option value="{{ label }}"{% if pair.pair and pair.pair.label == label %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Left-position stop (seconds) <input type="number" name="left_time" value="{{ pair.pair.times_s[0] if pair.pair else 0 }}" min="0" step="any" required></label>
+<label>Right-position stop (seconds) <input type="number" name="right_time" value="{{ pair.pair.times_s[1] if pair.pair else 2 }}" min="0" step="any" required></label>
+<label>Baseline for this pair (mm) <input type="number" name="baseline" value="{{ pair.baseline_mm }}" min="0.001" max="99999" step="any" required></label>
+<button type="submit">Load frames</button>
+</form>
+{% endif %}
+{% if pair and (not room or pair.pair) %}
+<form method="post" class="panel" id="measure-form">
+<h2>Mark corresponding points</h2>
+{% if room %}<p>{{ pair.pair.label }} edge, stops {{ pair.pair.times_s|join(' s and ') }} s, baseline {{ pair.pair.baseline_mm }} mm.
+Click the <strong>same two endpoints</strong> of the edge in both frames, for example the two floor corners of a wall,
+or the floor and ceiling ends of a vertical corner.</p>
+{% else %}<p>Baseline: {{ pair.baseline_mm }} mm. Shape: {{ pair.shape }}.</p>
+{% if pair.shape == 'circle' %}<p>Click the same two endpoints of a true diameter in both views.
+For a tilted circle, the apparent leftmost and rightmost silhouette points may not be a true corresponding diameter; use physical marks.</p>
+{% else %}<p>Click each vertex in order around the outline, starting at the same vertex in both views.
+For a rectangle use four corners, with the width edge first.</p>{% endif %}{% endif %}
+<div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+{% for side in ['left','right'] %}<div><h3>{{ side|capitalize }} view</h3>
+<canvas id="{{ side }}" style="width:100%;height:auto;cursor:crosshair;border:1px solid #aaa" aria-label="Mark {{ side }} view points"></canvas>
+<button type="button" id="undo-{{ side }}">Undo {{ side }}</button>
+<span id="count-{{ side }}"></span></div>{% endfor %}
+</div>
+<input type="hidden" name="action" value="measure"><input type="hidden" name="run" value="{{ pair.run }}">
+<input type="hidden" name="points" id="points"><p id="point-error" class="err" hidden></p>
+<button type="submit">{{ 'Measure edge' if room else 'Calculate dimensions' }}</button>
+</form>
+{% endif %}
+{% if result %}
+<section class="panel"><h2>Results</h2>
+{% for warning in result.warnings %}<p class="err">{{ warning }}</p>{% endfor %}
+<table><thead><tr><th>Dimension</th><th>Endpoints</th><th>Millimetres</th><th>Metres</th></tr></thead><tbody>
+{% for d in result.dimensions %}<tr><td>{{ d.label }}</td><td>{{ d.points|join('–') }}</td><td>{{ '%.2f'|format(d.mm) }}</td><td>{{ '%.3f'|format(d.mm / 1000) }}</td></tr>{% endfor %}
+</tbody></table>
+<h3>Depth and reconstructed points</h3><table><thead><tr><th>Point</th><th>Disparity (px)</th><th>X (mm)</th><th>Y (mm)</th><th>Z (mm)</th><th>Vertical mismatch (px)</th></tr></thead><tbody>
+{% for p in result.points_mm %}<tr><td>{{ loop.index }}</td><td>{{ '%.2f'|format(result.disparity_px[loop.index0]) }}</td>{% for x in p %}<td>{{ '%.2f'|format(x) }}</td>{% endfor %}<td>{{ '%.2f'|format(result.vertical_error_px[loop.index0]) }}</td></tr>{% endfor %}
+</tbody></table><p><a href="{{ url_for('module7.output', run=pair.run, name='result.json') }}" download>Download calculations (JSON)</a></p>
+<p class="small">Dimensions are estimates. Compare with a ruler or tape measure; displayed decimals are not an accuracy guarantee.</p></section>
+{% endif %}
+<p class="small">References: Shree K. Nayar,
+<a href="https://cave.cs.columbia.edu/Statics/monographs/Camera%20Calibration%20FPCV-4-1.pdf">Camera Calibration</a>, pp. 12–13;
+<a href="https://cave.cs.columbia.edu/Statics/monographs/Uncalibrated%20Stereo%20FPCV-4-2.pdf">Uncalibrated Stereo</a> (2025).
+</p>
+{% endblock %}
+{% block scripts %}
+{% if pair and (not room or pair.pair) %}<script>
+const points = {{ {'left': result.left_pixels, 'right': result.right_pixels}|tojson if result else '{"left":[],"right":[]}'|safe }};
+const shape = {{ ('edge' if room else pair.shape)|tojson }};
+const counts = {rectangle:4, circle:2, edge:2};
+const loaded = {};
+const version = Date.now();
+for (const side of ['left','right']) {
+  const canvas = document.getElementById(side), ctx = canvas.getContext('2d'), img = new Image();
+  function draw() {
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    const scale = canvas.width / img.naturalWidth;
+    points[side].forEach(([x,y],i) => {
+      ctx.beginPath(); ctx.arc(x*scale,y*scale,5,0,2*Math.PI); ctx.fillStyle='#ffdf00'; ctx.fill();
+      ctx.font='bold 16px sans-serif'; ctx.lineWidth=3; ctx.strokeStyle='#000';
+      ctx.strokeText(String(i+1),x*scale+8,y*scale-8); ctx.fillText(String(i+1),x*scale+8,y*scale-8);
+    });
+    document.getElementById('count-'+side).textContent = points[side].length+' points';
+  }
+  img.onload = () => { canvas.width=Math.min(1000,img.naturalWidth); canvas.height=Math.round(img.naturalHeight*canvas.width/img.naturalWidth); loaded[side]=true; draw(); };
+  img.src = {{ url_for('module7.output', run=pair.run, name='left.png')|tojson }}.replace('left.png', side+'.png') + '?v=' + version;
+  canvas.addEventListener('click',event => {
+    if (!loaded[side] || points[side].length >= (counts[shape] || 100)) return;
+    const rect=canvas.getBoundingClientRect();
+    points[side].push([(event.clientX-rect.left)*img.naturalWidth/rect.width,(event.clientY-rect.top)*img.naturalHeight/rect.height]); draw();
+  });
+  document.getElementById('undo-'+side).onclick=()=>{points[side].pop();if(loaded[side])draw();};
+}
+document.getElementById('measure-form').onsubmit=event=>{
+  const n=points.left.length;
+  if(n!==points.right.length || (counts[shape] ? n!==counts[shape] : n<3)) {
+    event.preventDefault(); const error=document.getElementById('point-error');error.hidden=false;error.textContent='Mark the required number of matching points in both views.';
+  } else document.getElementById('points').value=JSON.stringify(points);
+};
+</script>{% endif %}
+{% endblock %}
