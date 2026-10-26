@@ -1,10 +1,11 @@
 """Run python app/app.py; open /module-7/ for photos or /module-7/room for video.
 
 Upload original-resolution views and the matching Module 2 calibration YAML.
-Room mode keeps one video and measures each room edge separately: for every
-edge, pick the two stationary stops of a sideways camera move that faces that
-edge, then click its two endpoints in both frames. Geometry and video decoding
-live in week_7/module7/stereo.py.
+Room mode takes one handheld phone video and measures each room edge
+separately: for every edge, pick two frames filmed a step apart while facing
+it, the app estimates the camera motion between them, then click a reference
+of known length and the edge's two endpoints in both frames. Geometry and
+video decoding live in week_7/module7/stereo.py.
 """
 from __future__ import annotations
 
@@ -45,11 +46,11 @@ def run_folder(run: str) -> Path:
     return folder
 
 
-def _baseline(value: str) -> float:
-    baseline = float(value)
-    if not 0 < baseline < 100000:
-        raise ValueError('Enter a positive baseline below 100000 mm.')
-    return baseline
+def _length(value: str, name: str) -> float:
+    length = float(value)
+    if not 0 < length < 100000:
+        raise ValueError(f'Enter a positive {name} below 100000 mm.')
+    return length
 
 
 def _save_calibration(folder: Path) -> stereo.Camera:
@@ -101,7 +102,7 @@ def _new_run(build: Callable[[Path], dict]) -> dict:
 
 def _prepare_photos(folder: Path) -> dict:
     cam = _save_calibration(folder)
-    baseline = _baseline(request.form.get('baseline', ''))
+    baseline = _length(request.form.get('baseline', ''), 'baseline')
     shape = request.form.get('shape', 'rectangle')
     if shape not in ('rectangle', 'circle', 'polygon'):
         raise ValueError('Invalid shape.')
@@ -120,7 +121,6 @@ def _prepare_photos(folder: Path) -> dict:
 
 def _prepare_video(folder: Path) -> dict:
     cam = _save_calibration(folder)
-    baseline = _baseline(request.form.get('baseline', ''))
     video = request.files.get('video')
     if not video or not video.filename:
         raise ValueError('Upload a room video.')
@@ -131,7 +131,7 @@ def _prepare_video(folder: Path) -> dict:
     first = stereo.frame_at(folder / f'video{suffix}', 0)
     if (first.shape[1], first.shape[0]) != cam.image_size:
         raise ValueError(f'Video frames must match calibration resolution {cam.width} x {cam.height}. Calibrate checkerboard frames from this video mode.')
-    return {'shape': 'room', 'video': f'video{suffix}', 'baseline_mm': baseline, 'pair': None, 'edges': []}
+    return {'shape': 'room', 'video': f'video{suffix}', 'pair': None, 'edges': []}
 
 
 def _photo_page() -> tuple[dict | None, dict | None]:
@@ -155,12 +155,11 @@ def _load_pair(folder: Path, meta: dict) -> None:
         raise ValueError('Choose width, length or height.')
     times = [float(request.form.get(key, '')) for key in ('left_time', 'right_time')]
     if not np.isfinite(times).all() or times[0] == times[1]:
-        raise ValueError('Choose two different stop times: the left position and the right position.')
-    baseline = _baseline(request.form.get('baseline', ''))
-    video = folder / meta['video']
-    _save_views(folder, [stereo.frame_at(video, t) for t in times], stereo.camera(folder / 'camera.yaml'))
-    meta['pair'] = {'label': label, 'times_s': times, 'baseline_mm': baseline}
-    meta['baseline_mm'] = baseline
+        raise ValueError('Choose two different frame times.')
+    cam = stereo.camera(folder / 'camera.yaml')
+    frames = [stereo.frame_at(folder / meta['video'], t) for t in times]
+    _save_views(folder, frames, cam)
+    meta['pair'] = {'label': label, 'times_s': times, 'pose': stereo.relative_pose(*frames, cam).to_dict()}
 
 
 def _measure_edge(folder: Path, meta: dict) -> None:
@@ -168,12 +167,11 @@ def _measure_edge(folder: Path, meta: dict) -> None:
     if pair is None:
         raise ValueError('Load a stereo pair before marking points.')
     points = _points()
-    result = stereo.measure(points.get('left', []), points.get('right', []),
-                            stereo.camera(folder / 'camera.yaml'), pair['baseline_mm'], 'edge')
-    meta['edges'].append({**pair, 'mm': result['dimensions'][0]['mm'],
-                          'left_pixels': result['left_pixels'], 'right_pixels': result['right_pixels'],
-                          'disparity_px': result['disparity_px'], 'points_mm': result['points_mm'],
-                          'warnings': result['warnings']})
+    reference_mm = _length(request.form.get('reference_mm', ''), 'reference length')
+    result = stereo.measure_handheld(points.get('left', []), points.get('right', []),
+                                     stereo.camera(folder / 'camera.yaml'), stereo.Pose.from_dict(pair['pose']),
+                                     reference_mm)
+    meta['edges'].append({'label': pair['label'], 'times_s': pair['times_s'], **result})
     meta['pair'] = None
 
 
