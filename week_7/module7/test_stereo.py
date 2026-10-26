@@ -164,6 +164,46 @@ class RoomSummaryTests(unittest.TestCase):
 
 
 class WebTests(SyntheticCase):
+    def test_exif_portrait_upload(self):
+        import struct
+        sys.path.insert(0, str(stereo.ROOT / 'app'))
+        from app import create_app
+        from modules import module7
+        # Store landscape pixels with orientation 6 (90 degrees clockwise).
+        fs = cv2.FileStorage(str(self.folder / 'portrait.yaml'), cv2.FILE_STORAGE_WRITE)
+        fs.write('camera_matrix', np.array([[800., 0, 360], [0, 800, 640], [0, 0, 1]]))
+        fs.write('distortion_coefficients', np.zeros((1, 5)))
+        fs.write('image_width', 720)
+        fs.write('image_height', 1280)
+        fs.release()
+        image = np.zeros((720, 1280, 3), np.uint8)
+        ok, jpeg = cv2.imencode('.jpg', image)
+        self.assertTrue(ok)
+        tiff = b'II' + struct.pack('<HIH', 42, 8, 1)
+        tiff += struct.pack('<HHI', 274, 3, 1) + struct.pack('<H', 6) + b'\x00\x00' + struct.pack('<I', 0)
+        exif = b'Exif\x00\x00' + tiff
+        raw = jpeg.tobytes()
+        oriented = raw[:2] + b'\xff\xe1' + struct.pack('>H', len(exif) + 2) + exif + raw[2:]
+        client = create_app().test_client()
+        def upload(content):
+            return client.post('/module-7/', data={
+                'baseline': '200', 'shape': 'rectangle',
+                'camera': (io.BytesIO((self.folder / 'portrait.yaml').read_bytes()), 'camera.yaml'),
+                'left': (io.BytesIO(content), 'left.jpg'),
+                'right': (io.BytesIO(content), 'right.jpg')})
+        response = upload(oriented)
+        self.assertEqual(response.status_code, 200, response.text)
+        run = re.search(r'name="run" value="([a-f0-9]+)"', response.text).group(1)
+        try:
+            saved = cv2.imread(str(module7.run_folder(run) / 'left.png'))
+            self.assertEqual(saved.shape[:2], (1280, 720))
+        finally:
+            shutil.rmtree(module7.run_folder(run))
+        response = upload(raw)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('1280 x 720 pixels', response.text)
+        self.assertIn('calibration resolution 720 x 1280', response.text)
+
     def setUp(self):
         super().setUp()
         app = create_app()
