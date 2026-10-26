@@ -1,7 +1,7 @@
 """Run: python -m unittest discover -s week_7/module7 -p 'test_*.py' -v.
 
-Numerical ground truth, distortion correction, failure cases and Flask photo /
-video workflows. Synthetic data verify implementation, not physical accuracy.
+Numerical ground truth, distortion correction, handheld pose estimation,
+failure cases and Flask photo / video workflows. Synthetic data verify implementation, not physical accuracy.
 """
 import io
 import json
@@ -66,26 +66,12 @@ class MeasureTests(SyntheticCase):
 
         self.assertEqual([d['label'] for d in result['dimensions']], ['Edge 1', 'Edge 2', 'Edge 3', 'Edge 4'])
 
-    def test_edge_measures_room_width_seen_from_inside(self):
-        edge = self.room_edge('Width')
+    def test_edge_reports_one_distance(self):
+        p = self.points['object']
 
-        result = stereo.measure(edge['left'], edge['right'], self.cam, 200, 'edge')
+        result = stereo.measure(p['left'][:2], p['right'][:2], self.cam, 200, 'edge')
 
-        self.assertAlmostEqual(result['dimensions'][0]['mm'], demo.ROOM_SIZE['Width'], places=6)
-
-    def test_edge_measures_vertical_room_height(self):
-        edge = self.room_edge('Height')
-
-        result = stereo.measure(edge['left'], edge['right'], self.cam, 200, 'edge')
-
-        self.assertAlmostEqual(result['dimensions'][0]['mm'], demo.ROOM_SIZE['Height'], places=6)
-
-    def test_edge_measures_room_length_from_a_turned_camera(self):
-        edge = self.room_edge('Length')
-
-        result = stereo.measure(edge['left'], edge['right'], self.cam, 200, 'edge')
-
-        self.assertAlmostEqual(result['dimensions'][0]['mm'], demo.ROOM_SIZE['Length'], places=6)
+        self.assertEqual([(d['label'], round(d['mm'], 6)) for d in result['dimensions']], [('Distance', 1000.0)])
 
     def test_edge_rejects_more_than_two_points(self):
         p = self.points['object']
@@ -126,17 +112,143 @@ class MeasureTests(SyntheticCase):
         with self.assertRaisesRegex(ValueError, 'Baseline must be a positive'):
             stereo.measure(p['left'], p['right'], self.cam, float('nan'), 'rectangle')
 
-    def test_vertical_mismatch_over_three_pixels_is_rejected(self):
+    def test_vertical_mismatch_over_three_pixels_warns(self):
         p = self.points['object']
         right = np.array(p['right'])
         right[:, 1] += 4
 
-        with self.assertRaisesRegex(ValueError, 'Vertical mismatch'):
-            stereo.measure(p['left'], right, self.cam, 200, 'rectangle')
+        result = stereo.measure(p['left'], right, self.cam, 200, 'rectangle')
+
+        self.assertIn('Vertical mismatch exceeds 3 pixels', ' '.join(result['warnings']))
+
+    def test_vertical_mismatch_over_three_pixels_still_estimates_dimensions(self):
+        p = self.points['object']
+        right = np.array(p['right'])
+        right[:, 1] += 4
+
+        result = stereo.measure(p['left'], right, self.cam, 200, 'rectangle')
+
+        np.testing.assert_allclose([d['mm'] for d in result['dimensions']], [1000, 600, 1000, 600], rtol=.02)
 
     def test_frame_after_end_of_video_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'outside the video'):
             stereo.frame_at(self.folder / 'room.avi', 99)
+
+
+def true_pose(times_s):
+    """Exact pose of the second synthetic handheld frame relative to the first."""
+    (r1, c1), (r2, c2) = [demo.handheld_view(t) for t in times_s]
+    translation = r2 @ (c1 - c2)
+    return stereo.Pose(r2 @ r1.T, translation / np.linalg.norm(translation), 100, 5.)
+
+
+class HandheldTests(SyntheticCase):
+    def frames(self, edge):
+        return [stereo.frame_at(self.folder / 'room.avi', t) for t in edge['times_s']]
+
+    def measure(self, edge, pose=None, left=None):
+        pose = pose or true_pose(edge['times_s'])
+        return stereo.measure_handheld(left or edge['left'], edge['right'], self.cam, pose, edge['reference_mm'])
+
+    def test_known_pose_recovers_exact_edge_length(self):
+        edge = self.room_edge('Length')
+
+        result = self.measure(edge)
+
+        self.assertAlmostEqual(result['mm'], demo.ROOM_SIZE['Length'], places=6)
+
+    def test_known_pose_recovers_metric_camera_move(self):
+        edge = self.room_edge('Width')
+        (_, c1), (_, c2) = [demo.handheld_view(t) for t in edge['times_s']]
+
+        result = self.measure(edge)
+
+        self.assertAlmostEqual(result['camera_move_mm'], np.linalg.norm(c2 - c1), places=6)
+
+    def test_pose_from_video_frames_matches_true_rotation(self):
+        edge = self.room_edge('Length')
+        truth = true_pose(edge['times_s'])
+
+        pose = stereo.relative_pose(*self.frames(edge), self.cam)
+
+        angle = np.degrees(np.arccos(np.clip((np.trace(pose.rotation @ truth.rotation.T) - 1) / 2, -1, 1)))
+        self.assertLess(angle, .5)
+
+    def test_pose_from_video_frames_matches_true_direction_of_travel(self):
+        edge = self.room_edge('Length')
+        truth = true_pose(edge['times_s'])
+
+        pose = stereo.relative_pose(*self.frames(edge), self.cam)
+
+        self.assertLess(np.degrees(np.arccos(np.clip(pose.translation @ truth.translation, -1, 1))), 2)
+
+    def test_estimated_pose_measures_each_room_edge_within_two_percent(self):
+        lengths = {edge['label']: self.measure(edge, stereo.relative_pose(*self.frames(edge), self.cam))['mm']
+                   for edge in self.points['room']}
+
+        np.testing.assert_allclose([lengths[k] for k in demo.ROOM_SIZE], list(demo.ROOM_SIZE.values()), rtol=.02)
+
+    def test_camera_that_only_turns_is_rejected(self):
+        view = demo.handheld_view(.3)
+        turn = cv2.Rodrigues(np.array([0., .05, 0.]))[0]
+        frames = [demo.render_room(view, 0, 'still'), demo.render_room((turn @ view[0], view[1]), 0, 'turned')]
+
+        with self.assertRaisesRegex(ValueError, 'stepped sideways'):
+            stereo.relative_pose(*frames, self.cam)
+
+    def test_blank_frames_are_rejected_for_lack_of_texture(self):
+        blank = np.full((demo.SIZE[1], demo.SIZE[0], 3), 200, np.uint8)
+
+        with self.assertRaisesRegex(ValueError, 'Too little texture'):
+            stereo.relative_pose(blank, blank, self.cam)
+
+    def test_click_off_by_ten_pixels_warns(self):
+        edge = self.room_edge('Width')
+        left = np.array(edge['left'])
+        left[3, 1] += 10
+
+        result = self.measure(edge, left=left.tolist())
+
+        self.assertIn('more than 3 pixels', ' '.join(result['warnings']))
+
+    def test_click_off_by_ten_pixels_still_estimates_length(self):
+        edge = self.room_edge('Width')
+        left = np.array(edge['left'])
+        left[3, 1] += 10
+
+        result = self.measure(edge, left=left.tolist())
+
+        self.assertAlmostEqual(result['mm'], demo.ROOM_SIZE['Width'], delta=150)
+
+    def test_exact_clicks_have_no_warnings(self):
+        self.assertEqual(self.measure(self.room_edge('Height'))['warnings'], [])
+
+    def test_two_points_instead_of_four_are_rejected(self):
+        edge = self.room_edge('Width')
+
+        with self.assertRaisesRegex(ValueError, 'Mark 4 matching points'):
+            stereo.measure_handheld(edge['left'][:2], edge['right'][:2], self.cam, true_pose(edge['times_s']), 800)
+
+    def test_zero_reference_length_is_rejected(self):
+        edge = self.room_edge('Width')
+
+        with self.assertRaisesRegex(ValueError, 'Reference length must be a positive number'):
+            stereo.measure_handheld(edge['left'], edge['right'], self.cam, true_pose(edge['times_s']), 0)
+
+    def test_point_behind_camera_is_rejected(self):
+        edge = self.room_edge('Width')
+        truth = true_pose(edge['times_s'])
+        reversed_pose = stereo.Pose(truth.rotation, -truth.translation, 100, 5.)
+
+        with self.assertRaisesRegex(ValueError, 'in front of both cameras'):
+            self.measure(edge, reversed_pose)
+
+    def test_pose_survives_json_round_trip(self):
+        pose = true_pose([.3, 1.7])
+
+        restored = stereo.Pose.from_dict(json.loads(json.dumps(pose.to_dict())))
+
+        np.testing.assert_array_equal(restored.rotation, pose.rotation)
 
 
 class RoomSummaryTests(unittest.TestCase):
@@ -227,12 +339,16 @@ class WebTests(SyntheticCase):
     def upload_video(self):
         return self.upload('/module-7/room', {'action': 'upload', 'video': (io.BytesIO((self.folder / 'room.avi').read_bytes()), 'room.avi')})
 
+    def load_pair(self, run, edge, times=None):
+        times = times or edge['times_s']
+        return self.client.post('/module-7/room', data={'action': 'pair', 'run': run, 'label': edge['label'],
+                                                        'left_time': str(times[0]), 'right_time': str(times[1])})
+
     def measure_room_edge(self, run, edge):
-        times = edge['times_s']
-        self.client.post('/module-7/room', data={'action': 'pair', 'run': run, 'label': edge['label'],
-                                                 'left_time': str(times[0]), 'right_time': str(times[1]), 'baseline': '200'})
+        self.load_pair(run, edge)
         points = json.dumps({'left': edge['left'], 'right': edge['right']})
-        return self.client.post('/module-7/room', data={'action': 'measure', 'run': run, 'points': points})
+        return self.client.post('/module-7/room', data={'action': 'measure', 'run': run, 'points': points,
+                                                        'reference_mm': str(edge['reference_mm'])})
 
     def result_json(self, run):
         with self.client.get(f'/module-7/output/{run}/result.json') as response:
@@ -255,22 +371,21 @@ class WebTests(SyntheticCase):
         for edge in self.points['room']:
             self.measure_room_edge(run, edge)
 
-        summary = {d['label']: round(d['mean_mm'], 1) for d in self.result_json(run)['summary']}
-        self.assertEqual(summary, {'Width': 3000.0, 'Length': 4000.0, 'Height': 2400.0})
+        summary = {d['label']: d['mean_mm'] for d in self.result_json(run)['summary']}
+        np.testing.assert_allclose([summary[k] for k in demo.ROOM_SIZE], list(demo.ROOM_SIZE.values()), rtol=.02)
 
     def test_room_edge_records_its_stop_times(self):
         _, run = self.upload_video()
 
         self.measure_room_edge(run, self.room_edge('Length'))
 
-        self.assertEqual(self.result_json(run)['edges'][0]['times_s'], [2.5, 3.5])
+        self.assertEqual(self.result_json(run)['edges'][0]['times_s'], [2.3, 3.7])
 
     def test_room_pair_serves_the_frames_at_the_chosen_stops(self):
         _, run = self.upload_video()
         expected = [stereo.frame_at(self.folder / 'room.avi', t) for t in (2.5, 3.5)]
 
-        self.client.post('/module-7/room', data={'action': 'pair', 'run': run, 'label': 'Length',
-                                                 'left_time': '2.5', 'right_time': '3.5', 'baseline': '200'})
+        self.load_pair(run, self.room_edge('Length'), (2.5, 3.5))
 
         served = [cv2.imdecode(np.frombuffer(self.client.get(f'/module-7/output/{run}/{side}.png').data, np.uint8), cv2.IMREAD_COLOR)
                   for side in ('left', 'right')]
@@ -284,11 +399,30 @@ class WebTests(SyntheticCase):
 
         self.assertEqual(self.result_json(run)['summary'], [])
 
+    def test_room_measure_without_reference_length_is_a_bad_request(self):
+        _, run = self.upload_video()
+        edge = self.room_edge('Width')
+        self.load_pair(run, edge)
+
+        response = self.client.post('/module-7/room', data={'action': 'measure', 'run': run,
+                                                           'points': json.dumps({'left': edge['left'], 'right': edge['right']})})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_room_page_prefills_reference_with_measured_height(self):
+        _, run = self.upload_video()
+        self.measure_room_edge(run, self.room_edge('Height'))
+        height = f"{self.result_json(run)['summary'][0]['mean_mm']:.0f}"
+
+        response = self.load_pair(run, self.room_edge('Width'))
+
+        self.assertIn(f'name="reference_mm" value="{height}"', response.text)
+
     def test_room_measure_without_loaded_pair_is_rejected(self):
         _, run = self.upload_video()
         edge = self.room_edge('Width')
 
-        response = self.client.post('/module-7/room', data={'action': 'measure', 'run': run,
+        response = self.client.post('/module-7/room', data={'action': 'measure', 'run': run, 'reference_mm': '800',
                                                            'points': json.dumps({'left': edge['left'], 'right': edge['right']})})
 
         self.assertEqual((response.status_code, 'Load a stereo pair' in response.text), (400, True))
@@ -296,19 +430,18 @@ class WebTests(SyntheticCase):
     def test_room_pair_with_equal_stop_times_is_rejected(self):
         _, run = self.upload_video()
 
-        response = self.client.post('/module-7/room', data={'action': 'pair', 'run': run, 'label': 'Width',
-                                                           'left_time': '1', 'right_time': '1', 'baseline': '200'})
+        response = self.load_pair(run, self.room_edge('Width'), (1, 1))
 
-        self.assertEqual((response.status_code, 'two different stop times' in response.text), (400, True))
+        self.assertEqual((response.status_code, 'two different frame times' in response.text), (400, True))
 
     def test_room_error_keeps_already_measured_edges_on_page(self):
         _, run = self.upload_video()
         self.measure_room_edge(run, self.room_edge('Width'))
+        measured = f"{self.result_json(run)['edges'][0]['mm']:.1f}"
 
-        response = self.client.post('/module-7/room', data={'action': 'pair', 'run': run, 'label': 'Width',
-                                                           'left_time': '1', 'right_time': '1', 'baseline': '200'})
+        response = self.load_pair(run, self.room_edge('Width'), (1, 1))
 
-        self.assertIn('3000.0', response.text)
+        self.assertIn(measured, response.text)
 
     def test_room_video_must_match_calibration_resolution(self):
         fs = cv2.FileStorage(str(self.folder / 'camera.yaml'), cv2.FILE_STORAGE_WRITE)

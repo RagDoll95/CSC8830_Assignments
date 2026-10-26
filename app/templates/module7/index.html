@@ -5,16 +5,23 @@
 <p class="lead">Estimate depth from two views, then measure distances between reconstructed 3D points.</p>
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 <div class="panel">
-<p>Use the <strong>same calibrated camera</strong> at two positions. Move it to the right by a measured baseline,
-keeping its orientation, height, lens, focus and zoom fixed. The scene must stay still.
-Use a straight rail or a rigid guide; a handheld pan does not satisfy this model.</p>
-{% if room %}<p>A phone camera cannot see a whole room at once: from inside a rectangular room, the two corners
-next to any corner are at least 90° apart. So measure <strong>each edge separately</strong>. In one video,
-face a wall, record a stationary view, slide the camera right by the baseline, record a second stationary view,
-then turn to the next wall and repeat. For each edge, choose the timestamps of the two stops that face it.
-Disable digital stabilization and calibrate in the actual video mode.</p>{% endif %}
-<p class="small">Z = f<sub>x</sub>B / (u<sub>L</sub> − u<sub>R</sub>), after correcting lens distortion.
-The app checks vertical alignment, but passing that check does not prove the cameras are parallel.</p>
+{% if room %}<p>Film the room <strong>handheld with one phone</strong>, no rail and no measured baseline. Walk slowly
+past each wall, taking a step or two sideways while it stays in view, then turn to the next wall.
+The scene must stay still; keep the lens and zoom fixed and, if your phone allows, turn stabilization off.</p>
+<p>A phone camera cannot see a whole room at once: from inside a rectangular room, the two corners
+next to any corner are at least 90° apart. So measure <strong>each edge separately</strong>: choose two moments
+of the video, a step apart, that both show the edge. The app matches image features between the two frames to
+estimate how the camera moved and turned.</p>
+<p>A single camera cannot tell a small near room from a large far one, so each measurement needs one
+<strong>reference of known length</strong> visible in both frames: a sheet of letter paper (279 mm long side),
+a door (US interior doors are usually 2032 mm tall), a floor tile, or a vertical floor-to-ceiling corner once you
+have measured the room height.</p>{% else %}<p>Use the <strong>same calibrated camera</strong> at two positions.
+Move it to the right by a measured baseline, keeping its orientation, height, lens, focus and zoom fixed.
+The scene must stay still.</p>{% endif %}
+<p class="small">{% if room %}Camera motion comes from the essential matrix of matched features; clicked points are
+triangulated and scaled so the reference has its known length.{% else %}Z = f<sub>x</sub>B / (u<sub>L</sub> − u<sub>R</sub>),
+after correcting lens distortion.{% endif %} Clicks that disagree with the geometry by more than 3 pixels are still
+measured, with a warning.</p>
 </div>
 {% if not (room and pair) %}
 <form method="post" enctype="multipart/form-data" class="panel">
@@ -23,12 +30,12 @@ The app checks vertical alignment, but passing that check does not prove the cam
 <input type="file" name="camera" accept=".yaml,.yml"></label>
 <p class="small">Calibration must match the capture mode and exact image resolution. The existing Module 2 calibration
 is 3024 × 4032; it must not be used for cropped or stabilized phone video. Use Module 2 to calibrate checkerboard frames from your video mode.</p>
-<label>Measured sideways baseline (mm){% if room %}, used by default for every pair{% endif %}
-<input type="number" name="baseline" min="0.001" max="99999" step="any" required></label>
 {% if room %}
 <input type="hidden" name="action" value="upload">
 <label>Room video <input type="file" name="video" accept="video/*" required></label>
 {% else %}
+<label>Measured sideways baseline (mm)
+<input type="number" name="baseline" min="0.001" max="99999" step="any" required></label>
 <label>Shape <select name="shape"><option value="rectangle">Rectangle</option><option value="circle">Circle</option><option value="polygon">Polygon</option></select></label>
 <label>Left photo <input type="file" name="left" accept=".jpg,.jpeg,.png" required></label>
 <label>Right photo <input type="file" name="right" accept=".jpg,.jpeg,.png" required></label>
@@ -39,9 +46,9 @@ is 3024 × 4032; it must not be used for cropped or stabilized phone video. Use 
 {% if room and pair %}
 <section class="panel"><h2>Measured edges</h2>
 {% if pair.edges %}
-<table><thead><tr><th>#</th><th>Dimension</th><th>Stops (s)</th><th>Baseline (mm)</th><th>Millimetres</th><th>Warnings</th><th></th></tr></thead><tbody>
+<table><thead><tr><th>#</th><th>Dimension</th><th>Frames (s)</th><th>Reference (mm)</th><th>Camera moved (mm)</th><th>Millimetres</th><th>Warnings</th><th></th></tr></thead><tbody>
 {% for edge in pair.edges %}<tr><td>{{ loop.index }}</td><td>{{ edge.label }}</td><td>{{ edge.times_s|join(' → ') }}</td>
-<td>{{ edge.baseline_mm }}</td><td>{{ '%.1f'|format(edge.mm) }}</td><td>{{ edge.warnings|join(' ') }}</td>
+<td>{{ edge.reference_mm }}</td><td>{{ '%.0f'|format(edge.camera_move_mm) }}</td><td>{{ '%.1f'|format(edge.mm) }}</td><td>{{ edge.warnings|join(' ') }}</td>
 <td><form method="post"><input type="hidden" name="run" value="{{ pair.run }}"><input type="hidden" name="action" value="remove">
 <input type="hidden" name="index" value="{{ loop.index0 }}"><button type="submit">Remove</button></form></td></tr>{% endfor %}
 </tbody></table>
@@ -57,18 +64,22 @@ is 3024 × 4032; it must not be used for cropped or stabilized phone video. Use 
 <h2>{{ 'Measure another edge' if pair.edges else 'Measure an edge' }}</h2>
 <input type="hidden" name="run" value="{{ pair.run }}"><input type="hidden" name="action" value="pair">
 <label>Dimension <select name="label">{% for label in labels %}<option value="{{ label }}"{% if pair.pair and pair.pair.label == label %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-<label>Left-position stop (seconds) <input type="number" name="left_time" value="{{ pair.pair.times_s[0] if pair.pair else 0 }}" min="0" step="any" required></label>
-<label>Right-position stop (seconds) <input type="number" name="right_time" value="{{ pair.pair.times_s[1] if pair.pair else 2 }}" min="0" step="any" required></label>
-<label>Baseline for this pair (mm) <input type="number" name="baseline" value="{{ pair.baseline_mm }}" min="0.001" max="99999" step="any" required></label>
+<label>First frame (seconds) <input type="number" name="left_time" value="{{ pair.pair.times_s[0] if pair.pair else 0 }}" min="0" step="any" required></label>
+<label>Second frame, a step further along (seconds) <input type="number" name="right_time" value="{{ pair.pair.times_s[1] if pair.pair else 1 }}" min="0" step="any" required></label>
 <button type="submit">Load frames</button>
 </form>
 {% endif %}
 {% if pair and (not room or pair.pair) %}
 <form method="post" class="panel" id="measure-form">
 <h2>Mark corresponding points</h2>
-{% if room %}<p>{{ pair.pair.label }} edge, stops {{ pair.pair.times_s|join(' s and ') }} s, baseline {{ pair.pair.baseline_mm }} mm.
-Click the <strong>same two endpoints</strong> of the edge in both frames, for example the two floor corners of a wall,
+{% if room %}<p>{{ pair.pair.label }} edge, frames {{ pair.pair.times_s|join(' s and ') }} s
+(camera motion from {{ pair.pair.pose.inliers }} matched features, {{ '%.1f'|format(pair.pair.pose.parallax_deg) }}° parallax).
+In both frames click, in the same order: <strong>points 1–2</strong>, the ends of the reference;
+<strong>points 3–4</strong>, the ends of the edge, for example the two floor corners of a wall,
 or the floor and ceiling ends of a vertical corner.</p>
+{% set height = summary|selectattr('label', 'equalto', 'Height')|first %}
+<label>Reference length (mm){% if height %}, pre-filled with the measured room height for a floor-to-ceiling corner{% endif %}
+<input type="number" name="reference_mm" value="{{ '%.0f'|format(height.mean_mm) if height else '' }}" min="0.001" max="99999" step="any" required></label>
 {% else %}<p>Baseline: {{ pair.baseline_mm }} mm. Shape: {{ pair.shape }}.</p>
 {% if pair.shape == 'circle' %}<p>Click the same two endpoints of a true diameter in both views.
 For a tilted circle, the apparent leftmost and rightmost silhouette points may not be a true corresponding diameter; use physical marks.</p>
@@ -104,8 +115,8 @@ For a rectangle use four corners, with the width edge first.</p>{% endif %}{% en
 {% block scripts %}
 {% if pair and (not room or pair.pair) %}<script>
 const points = {{ {'left': result.left_pixels, 'right': result.right_pixels}|tojson if result else '{"left":[],"right":[]}'|safe }};
-const shape = {{ ('edge' if room else pair.shape)|tojson }};
-const counts = {rectangle:4, circle:2, edge:2};
+const shape = {{ ('room' if room else pair.shape)|tojson }};
+const counts = {rectangle:4, circle:2, room:4};
 const loaded = {};
 const version = Date.now();
 for (const side of ['left','right']) {
@@ -114,7 +125,7 @@ for (const side of ['left','right']) {
     ctx.drawImage(img,0,0,canvas.width,canvas.height);
     const scale = canvas.width / img.naturalWidth;
     points[side].forEach(([x,y],i) => {
-      ctx.beginPath(); ctx.arc(x*scale,y*scale,5,0,2*Math.PI); ctx.fillStyle='#ffdf00'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x*scale,y*scale,5,0,2*Math.PI); ctx.fillStyle=(shape==='room' && i<2)?'#00c8ff':'#ffdf00'; ctx.fill();
       ctx.font='bold 16px sans-serif'; ctx.lineWidth=3; ctx.strokeStyle='#000';
       ctx.strokeText(String(i+1),x*scale+8,y*scale-8); ctx.fillText(String(i+1),x*scale+8,y*scale-8);
     });
