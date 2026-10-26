@@ -66,7 +66,7 @@ def _save_views(folder: Path, views: list[np.ndarray | None], cam: stereo.Camera
         if image is None:
             raise ValueError('Could not decode a view.')
         if (image.shape[1], image.shape[0]) != cam.image_size:
-            raise ValueError(f'Views must match calibration resolution {cam.width} x {cam.height}. Calibrate in the same photo/video mode; do not resize or crop.')
+            raise ValueError(f'{side.capitalize()} view is {image.shape[1]} x {image.shape[0]} pixels after orientation correction. Views must match calibration resolution {cam.width} x {cam.height}. Upload the original full-resolution file from the calibrated capture mode; do not resize or crop.')
         if not cv2.imwrite(str(folder / f'{side}.png'), image):
             raise ValueError('Could not save the view.')
 
@@ -112,7 +112,7 @@ def _prepare_photos(folder: Path) -> dict:
             raise ValueError('Upload both photos.')
         path = folder / f'{side}.upload'
         upload.save(path)
-        views.append(cv2.imread(str(path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION))
+        views.append(cv2.imread(str(path), cv2.IMREAD_COLOR))
         path.unlink()
     _save_views(folder, views, cam)
     return {'baseline_mm': baseline, 'shape': shape}
